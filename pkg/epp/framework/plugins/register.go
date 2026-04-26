@@ -23,6 +23,7 @@ func RegisterAllPlugins() {
 	plugin.Register(bylabel.EncodeRoleType, bylabel.EncodeRoleFactory)
 	plugin.Register(bylabel.DecodeRoleType, bylabel.DecodeRoleFactory)
 	plugin.Register(bylabel.PrefillRoleType, bylabel.PrefillRoleFactory)
+	plugin.Register(bylabel.FlexibleDecoderRoleType, bylabel.FlexibleDecoderRoleFactory)
 	plugin.Register(disagg.DisaggHeadersHandlerType, disagg.HeadersHandlerFactory)
 	// Legacy alias - existing YAML configs using prefill-header-handler continue to work.
 	plugin.Register(disagg.PrefillHeaderHandlerType, disagg.HeadersHandlerFactory) //nolint:staticcheck // intentional: keep backward compatibility (SA1019)
@@ -45,4 +46,7 @@ func RegisterAllPlugins() {
 	// ep decider plugins
 	plugin.Register(disagg.AlwaysDisaggMulimodalPluginType, disagg.AlwaysDisaggMulimodalDeciderPluginFactory)
 	plugin.Register(contextlengthaware.ContextLengthAwareType, contextlengthaware.Factory)
+	// flexible-decoder plugins
+	plugin.Register(disagg.SLORiskDeciderPluginType, disagg.SLORiskDeciderPluginFactory)
+	plugin.Register(disagg.SelfDecodeCapacityDeciderPluginType, disagg.SelfDecodeCapacityDeciderPluginFactory)
 }

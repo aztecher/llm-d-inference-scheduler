@@ -87,6 +87,7 @@ import (
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/picker/random"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/picker/weightedrandom"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/profile"
+	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/profilehandler/disagg"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/scorer/kvcacheutilization"
 	latencyscorer "github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/scorer/latency"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/scorer/loraaffinity"
@@ -112,9 +113,7 @@ const (
 	enableExperimentalFlowControlLayer = "ENABLE_EXPERIMENTAL_FLOW_CONTROL_LAYER"
 )
 
-var (
-	setupLog = ctrl.Log.WithName("setup")
-)
+var setupLog = ctrl.Log.WithName("setup")
 
 // NewRunner initializes a new EPP Runner and returns its pointer.
 func NewRunner() *Runner {
@@ -441,8 +440,8 @@ func NewEndpointPoolFromOptions(
 }
 
 func setupDatastore(ctx context.Context, epFactory datalayer.EndpointFactory, modelServerMetricsPort int32,
-	startCrdReconcilers bool, namespace, name, endpointSelector string, endpointTargetPorts []int) (datastore.Datastore, error) {
-
+	startCrdReconcilers bool, namespace, name, endpointSelector string, endpointTargetPorts []int,
+) (datastore.Datastore, error) {
 	if startCrdReconcilers {
 		return datastore.NewDatastore(ctx, epFactory, modelServerMetricsPort), nil
 	} else {
@@ -570,10 +569,14 @@ func (r *Runner) parseConfigurationPhaseTwo(ctx context.Context, rawConfig *conf
 
 	handle := fwkplugin.NewEppHandle(ctx, makePodListFunc(ds))
 	cfg, err := loader.InstantiateAndConfigure(rawConfig, handle, logger)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to load the configuration - %w", err)
 	}
+
+	// TODO(m-michishita): Consider refactoring
+	// Wire PrefillEndpointProvider to any SLORiskDecider plugins so they can
+	// compute live Prefill pool saturation from the datastore.
+	disagg.WirePrefillEndpoints(handle.GetAllPlugins(), ds)
 
 	r.schedulerConfig = cfg.SchedulerConfig
 
@@ -706,7 +709,6 @@ func extractGKNN(poolName, poolGroup, poolNamespace, endpointSelector string) (*
 		eppPodNameEnv := os.Getenv("POD_NAME")
 		if eppPodNameEnv == "" {
 			return nil, errors.New("failed to get environment variable POD_NAME")
-
 		}
 		eppName, err := extractDeploymentName(eppPodNameEnv)
 		if err != nil {

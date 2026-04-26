@@ -75,6 +75,9 @@ export VLLM_REPLICA_COUNT="${VLLM_REPLICA_COUNT:-1}"
 # By default we are not setting up for PD (Prefill/Decode)
 export PD_ENABLED="\"${PD_ENABLED:-false}\""
 
+# (PoC) default we are not setting up w/ FlexDecode
+export FLEXD_ENABLED="\"${FLEXD_ENABLED:-false}\""
+
 # By default we are not deploying Prometheus monitoring
 export PROM_ENABLED="${PROM_ENABLED:-false}"
 
@@ -126,7 +129,11 @@ elif [ "${EPD_ENABLED}" == "\"true\"" ]; then
   # E/P/D mode (separate Encode, Prefill, and Decode deployments)
   DEFAULT_EPP_CONFIG="deploy/config/sim-epd-epp-config.yaml"
 
-elif [ "${PD_ENABLED}" == "\"true\"" ]; then
+elif [ "${PD_ENABLED}" == "\"true\"" ] && [ "${FLEXD_ENABLED}" == "\"true\"" ]; then
+  # (PoC) Prefill-Decode with Flexible Decoder mode
+  DEFAULT_EPP_CONFIG="deploy/config/sim-pd-flexd-epp-config.yaml"
+
+elif [ "${PD_ENABLED}" == "\"true\"" ] && [ "${FLEXD_ENABLED}" == "\"false\""]; then
   # Prefill-Decode mode
   DEFAULT_EPP_CONFIG="deploy/config/sim-pd-epp-config.yaml"
 
@@ -280,7 +287,9 @@ kubectl kustomize --enable-helm deploy/components/crds-istio |
 # Deploy the environment to the "default" namespace
 if [ "${EPD_ENABLED}" == "\"true\"" ]; then
   KUSTOMIZE_DIR="deploy/environments/dev/kind-istio-epd"
-elif [ "${PD_ENABLED}" == "\"true\"" ]; then
+elif [ "${PD_ENABLED}" == "\"true\"" ] && [ "${FLEXD_ENABLED}" == "\"true\"" ]; then
+  KUSTOMIZE_DIR="deploy/environments/dev/kind-istio-pd-flexd"
+elif [ "${PD_ENABLED}" == "\"true\"" ] && [ "${FLEXD_ENABLED}" == "\"false\"" ]; then
   KUSTOMIZE_DIR="deploy/environments/dev/kind-istio-pd"
 else
   KUSTOMIZE_DIR="deploy/environments/dev/kind-istio"
@@ -296,7 +305,7 @@ kubectl --context ${KUBE_CONTEXT} create configmap epp-config --from-file=epp-co
 
 kubectl kustomize --enable-helm  ${KUSTOMIZE_DIR} \
 	| envsubst '${POOL_NAME} ${MODEL_NAME} ${MODEL_NAME_SAFE} ${EPP_NAME} ${EPP_IMAGE} ${VLLM_SIMULATOR_IMAGE} \
-  ${PD_ENABLED} ${KV_CACHE_ENABLED} ${SIDECAR_IMAGE} ${UDS_TOKENIZER_IMAGE} ${TARGET_PORTS} \
+  ${PD_ENABLED} ${FLEXD_ENABLED} ${KV_CACHE_ENABLED} ${SIDECAR_IMAGE} ${UDS_TOKENIZER_IMAGE} ${TARGET_PORTS} \
   ${VLLM_REPLICA_COUNT} ${VLLM_REPLICA_COUNT_E} ${VLLM_REPLICA_COUNT_P} ${VLLM_REPLICA_COUNT_D} ${VLLM_DATA_PARALLEL_SIZE}' \
   | kubectl --context ${KUBE_CONTEXT} apply -f -
 

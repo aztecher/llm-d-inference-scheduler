@@ -32,38 +32,46 @@ const (
 var _ requestcontrol.PreRequest = &HeadersHandler{}
 
 type disaggHeadersHandlerParameters struct {
-	PrefillProfile string `json:"prefillProfile"`
-	EncodeProfile  string `json:"encodeProfile"`
+	PrefillProfile     string `json:"prefillProfile"`
+	EncodeProfile      string `json:"encodeProfile"`
+	FlexDecoderProfile string `json:"flexDecoderProfile,omitempty"`
 }
 
 // HeadersHandlerFactory defines the factory function for the HeadersHandler
 func HeadersHandlerFactory(name string, rawParameters json.RawMessage, _ plugin.Handle) (plugin.Plugin, error) {
 	parameters := disaggHeadersHandlerParameters{
-		PrefillProfile: defaultPrefillProfile,
-		EncodeProfile:  defaultEncodeProfile,
+		PrefillProfile:     defaultPrefillProfile,
+		EncodeProfile:      defaultEncodeProfile,
+		FlexDecoderProfile: defaultFlexDecoderProfile,
 	}
 	if rawParameters != nil {
 		if err := json.Unmarshal(rawParameters, &parameters); err != nil {
 			return nil, fmt.Errorf("failed to parse the parameters of the '%s' pre-request plugin - %w", DisaggHeadersHandlerType, err)
 		}
 	}
-	return NewHeadersHandler(parameters.PrefillProfile, parameters.EncodeProfile).WithName(name), nil
+	return NewHeadersHandler(parameters.PrefillProfile, parameters.EncodeProfile, parameters.FlexDecoderProfile).WithName(name), nil
 }
 
 // NewHeadersHandler initializes a new HeadersHandler and returns its pointer.
-func NewHeadersHandler(prefillProfile, encodeProfile string) *HeadersHandler {
+// flexDecoderProfile is the profile name used when FlexibleDecoder acts as a temporary prefiller
+// (prefill_and_forward mode). Pass "" to disable flex-decoder header support.
+func NewHeadersHandler(prefillProfile, encodeProfile, flexDecoderProfile string) *HeadersHandler {
 	return &HeadersHandler{
-		typedName:      plugin.TypedName{Type: DisaggHeadersHandlerType},
-		prefillProfile: prefillProfile,
-		encodeProfile:  encodeProfile,
+		typedName:          plugin.TypedName{Type: DisaggHeadersHandlerType},
+		prefillProfile:     prefillProfile,
+		encodeProfile:      encodeProfile,
+		flexDecoderProfile: flexDecoderProfile,
 	}
 }
 
 // HeadersHandler PreRequest plugin that sets both prefill and encode disaggregation headers.
+// When flexDecoderProfile is set and the FlexibleDecoder is in prefill_and_forward mode
+// (present in ProfileResults but not the primary), it is used as the prefill endpoint.
 type HeadersHandler struct {
-	typedName      plugin.TypedName
-	prefillProfile string
-	encodeProfile  string
+	typedName          plugin.TypedName
+	prefillProfile     string
+	encodeProfile      string
+	flexDecoderProfile string
 }
 
 // TypedName returns the typed name of the plugin.
@@ -107,9 +115,17 @@ func (p *HeadersHandler) PreRequest(ctx context.Context, request *scheduling.Inf
 	}
 	span.SetAttributes(attribute.String("gen_ai.request.id", request.RequestId))
 
-	// Prefill header
+	// Prefill header: check regular prefill first, then flex-decoder as fallback prefiller.
+	// In prefill_and_forward mode the flex-decoder appears in ProfileResults but is NOT the
+	// primary, so we use its endpoint as the prefill target.
 	delete(request.Headers, routing.PrefillEndpointHeader) // clear header, if already set
 	prefillProfileRunResult := schedulingResult.ProfileResults[p.prefillProfile]
+	if prefillProfileRunResult == nil && p.flexDecoderProfile != "" {
+		if flexRes, ok := schedulingResult.ProfileResults[p.flexDecoderProfile]; ok &&
+			schedulingResult.PrimaryProfileName != p.flexDecoderProfile {
+			prefillProfileRunResult = flexRes
+		}
+	}
 	switch {
 	case prefillProfileRunResult == nil:
 		span.SetAttributes(

@@ -19,7 +19,7 @@ BUILDER_IMAGE_NAME ?= llm-d-builder
 IMAGE_REGISTRY ?= ghcr.io/llm-d
 
 IMAGE_TAG_BASE ?= $(IMAGE_REGISTRY)/$(PROJECT_NAME)
-EPP_TAG ?= dev
+EPP_TAG ?= poc # FIXME
 export EPP_IMAGE ?= $(IMAGE_TAG_BASE):$(EPP_TAG)
 
 SIDECAR_TAG ?= dev

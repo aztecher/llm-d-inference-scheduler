@@ -128,7 +128,7 @@ func TestHeadersHandlerFactory(t *testing.T) {
 
 func TestPreRequestNilRequest(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	result := &scheduling.SchedulingResult{
 		ProfileResults: map[string]*scheduling.ProfileRunResult{},
@@ -141,7 +141,7 @@ func TestPreRequestNilRequest(t *testing.T) {
 
 func TestPreRequestNilSchedulingResult(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -194,7 +194,7 @@ func TestPrefillHeaderHandlerBackwardCompat(t *testing.T) {
 
 func TestPreRequestPrefillProfileExists(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		TargetModel: "test-model",
@@ -220,7 +220,7 @@ func TestPreRequestPrefillProfileExists(t *testing.T) {
 
 func TestPreRequestPrefillProfileNotExists(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		Headers: map[string]string{},
@@ -239,7 +239,7 @@ func TestPreRequestPrefillProfileNotExists(t *testing.T) {
 
 func TestPreRequestClearsExistingPrefillHeader(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		Headers: map[string]string{
@@ -265,7 +265,7 @@ func TestPreRequestClearsExistingPrefillHeader(t *testing.T) {
 
 func TestPreRequestClearsHeaderWhenNoPrefillResult(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		Headers: map[string]string{
@@ -286,7 +286,7 @@ func TestPreRequestClearsHeaderWhenNoPrefillResult(t *testing.T) {
 
 func TestPreRequestCustomPrefillProfile(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("my-custom-prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("my-custom-prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		Headers: map[string]string{},
@@ -312,7 +312,7 @@ func TestPreRequestPrefillProfileNilResult(t *testing.T) {
 	// disagg_profile_handler sets the prefill profile result to nil when the
 	// decider decides not to prefill. Verify PreRequest handles this gracefully.
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -335,7 +335,7 @@ func TestPreRequestPrefillProfileNilResult(t *testing.T) {
 
 func TestPreRequestPrefillEmptyTargetEndpoints(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -358,7 +358,7 @@ func TestPreRequestPrefillEmptyTargetEndpoints(t *testing.T) {
 
 func TestPreRequestPrefillIPv6Address(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		Headers: map[string]string{},
@@ -384,7 +384,7 @@ func TestPreRequestPrefillIPv6Address(t *testing.T) {
 
 func TestPreRequestEncodeProfileExists(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		TargetModel: "test-model",
@@ -410,7 +410,7 @@ func TestPreRequestEncodeProfileExists(t *testing.T) {
 
 func TestPreRequestEncodeProfileNotExists(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -430,7 +430,7 @@ func TestPreRequestEncodeProfileNotExists(t *testing.T) {
 
 func TestPreRequestEncodeClearsExistingHeader(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -457,7 +457,7 @@ func TestPreRequestEncodeClearsExistingHeader(t *testing.T) {
 
 func TestPreRequestEncodeClearsHeaderWhenNoEncodeResult(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -479,7 +479,7 @@ func TestPreRequestEncodeClearsHeaderWhenNoEncodeResult(t *testing.T) {
 
 func TestPreRequestEncodeCustomProfile(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "my-custom-encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "my-custom-encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -504,7 +504,7 @@ func TestPreRequestEncodeCustomProfile(t *testing.T) {
 
 func TestPreRequestEncodeIPv6Address(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -531,7 +531,7 @@ func TestPreRequestEncodeProfileNilResult(t *testing.T) {
 	// disagg_profile_handler sets the encode profile result to nil when the
 	// decider decides not to encode. Verify PreRequest handles this gracefully.
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -554,7 +554,7 @@ func TestPreRequestEncodeProfileNilResult(t *testing.T) {
 
 func TestPreRequestEncodeEmptyTargetEndpoints(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
@@ -579,7 +579,7 @@ func TestPreRequestEncodeEmptyTargetEndpoints(t *testing.T) {
 
 func TestPreRequestEncodeMultipleEndpoints(t *testing.T) {
 	ctx := utils.NewTestContext(t)
-	handler := NewHeadersHandler("prefill", "encode").WithName("test")
+	handler := NewHeadersHandler("prefill", "encode", "").WithName("test")
 
 	request := &scheduling.InferenceRequest{
 		RequestId: "req-123",
