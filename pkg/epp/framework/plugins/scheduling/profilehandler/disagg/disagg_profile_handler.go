@@ -392,16 +392,19 @@ func (h *Handler) Pick(ctx context.Context, cycleState *scheduling.CycleState, r
 						attribute.String("llm_d.profile_handler.decision", "complete_self_decode"),
 						attribute.String("llm_d.flexdec.flex_endpoint", flexEndpoint.GetMetadata().Address),
 					)
+					metrics.RecordFlexDecoderActivation(request.TargetModel, metrics.FlexDecoderActionSelfDecode)
 				} else {
 					cycleState.Write(flexDecActionStateKey, flexDecActionState{action: flexDecActionPrefillAndForward})
 					span.SetAttributes(
 						attribute.String("llm_d.profile_handler.decision", "complete_prefill_and_forward"),
 						attribute.String("llm_d.flexdec.flex_endpoint", flexEndpoint.GetMetadata().Address),
 					)
+					metrics.RecordFlexDecoderActivation(request.TargetModel, metrics.FlexDecoderActionPrefillAndForward)
 				}
 			} else {
 				// Flex-decoder returned no endpoints: fall back to normal decode.
 				span.SetAttributes(attribute.String("llm_d.profile_handler.decision", "complete_no_flex_endpoints"))
+				metrics.RecordFlexDecoderActivation(request.TargetModel, metrics.FlexDecoderActionNoEndpoints)
 			}
 			encodeUsed := profileResults[h.encodeProfile] != nil
 			metrics.RecordDisaggDecision(request.TargetModel, metrics.DisaggDecisionType(encodeUsed, true))

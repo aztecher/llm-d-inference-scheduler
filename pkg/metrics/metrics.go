@@ -20,6 +20,16 @@ const (
 	DecisionTypeEncodeDecode = "encode-decode"
 	// DecisionTypeEncodePrefillDecode is for requests that are gone through E/P/D.
 	DecisionTypeEncodePrefillDecode = "encode-prefill-decode"
+
+	// FlexDecoderActionSelfDecode is recorded when FlexibleDecoder handles both Prefill and Decode.
+	FlexDecoderActionSelfDecode = "self_decode"
+	// FlexDecoderActionPrefillAndForward is recorded when FlexibleDecoder handles Prefill
+	// and forwards KV cache to a regular Decode pod.
+	FlexDecoderActionPrefillAndForward = "prefill_and_forward"
+	// FlexDecoderActionNoEndpoints is recorded when FlexibleDecoder was activated by the
+	// SLORiskDecider but no FlexibleDecoder pod was available; the request falls back to
+	// decode-only routing.
+	FlexDecoderActionNoEndpoints = "no_endpoints"
 )
 
 var (
@@ -45,11 +55,36 @@ var (
 		},
 		[]string{"model_name", "decision_type"},
 	)
+
+	// SchedulerFlexDecoderActivationCount records FlexibleDecoder activation events.
+	// This counter is independent of disagg_decision_total and specifically tracks when
+	// the SLORiskDecider triggered FlexibleDecoder as a temporary Prefiller for SLO protection.
+	// The action label distinguishes the resulting routing mode:
+	//   - self_decode:          FlexibleDecoder handled both Prefill and Decode.
+	//   - prefill_and_forward:  FlexibleDecoder handled Prefill; a regular Decode pod handled Decode.
+	//   - no_endpoints:         FlexibleDecoder was activated but no pod was available; fell back to decode-only.
+	SchedulerFlexDecoderActivationCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: SchedulerSubsystem,
+			Name:      "flex_decoder_activation_total",
+			Help:      metrics.HelpMsgWithStability("Total number of FlexibleDecoder activations for SLO protection", compbasemetrics.ALPHA),
+		},
+		[]string{"model_name", "action"},
+	)
 )
 
 // GetCollectors returns all custom collectors for the llm-d-inference-scheduler.
 func GetCollectors() []prometheus.Collector {
-	return []prometheus.Collector{SchedulerPDDecisionCount, SchedulerDisaggDecisionCount}
+	return []prometheus.Collector{SchedulerPDDecisionCount, SchedulerDisaggDecisionCount, SchedulerFlexDecoderActivationCount}
+}
+
+// RecordFlexDecoderActivation increments the FlexibleDecoder activation counter.
+// The action must be one of FlexDecoderAction* constants.
+func RecordFlexDecoderActivation(modelName, action string) {
+	if modelName == "" {
+		modelName = "unknown"
+	}
+	SchedulerFlexDecoderActivationCount.WithLabelValues(modelName, action).Inc()
 }
 
 // RecordPDDecision increments the counter for a specific P/D routing decision.

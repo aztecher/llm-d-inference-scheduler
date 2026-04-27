@@ -15,15 +15,17 @@ plugins:
 - type: queue-scorer
 - type: prefill-filter
 - type: decode-filter
+- type: flexible-decoder-filter
 - type: max-score-picker
 - type: prefix-based-pd-decider
   parameters:
-    nonCachedTokens: 16
+    nonCachedTokens: 1 # PoC: disaggregate on any non-empty prompt
 # PoC
 # Define Saturation Detector which will be used in slo-risk-decider
 - type: utilization-detector
   parameters:
-    kvCacheThreshold: 0.85
+    kvCacheUtilThreshold: 0.85
+    queueDepthThreshold: 2 # lower threshold, for PoC
 # Define SLORisk decider ( for checking SLO-vioration )
 - type: slo-risk-decider
   parameters:
@@ -61,5 +63,11 @@ schedulingProfiles:
     weight: 2
   - pluginRef: queue-scorer
     weight: 1
-# - name: flex-decoder
-#   plugins:
+- name: flex-decoder
+  plugins:
+  - pluginRef: flexible-decoder-filter
+  - pluginRef: max-score-picker
+  - pluginRef: prefix-cache-scorer
+    weight: 2
+  - pluginRef: queue-scorer
+    weight: 1

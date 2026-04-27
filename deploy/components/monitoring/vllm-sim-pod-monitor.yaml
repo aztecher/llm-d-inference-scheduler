@@ -9,6 +9,9 @@ spec:
     matchLabels:
       app: ${POOL_NAME}
   podMetricsEndpoints:
-  - port: sidecar-http
-    interval: 15s
+  - port: sidecar-http  # decode / flex-decoder: routing sidecar (port 8000)
+    interval: 5s
+    path: /metrics
+  - port: prefill-http  # PoC prefill: vllm-sim direct (port 8000)
+    interval: 5s
     path: /metrics

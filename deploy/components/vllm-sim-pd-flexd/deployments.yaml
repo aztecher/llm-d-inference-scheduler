@@ -56,6 +56,8 @@ spec:
         - "--port=8000"
         - "--model=${MODEL_NAME}"
         - "--data-parallel-size=${VLLM_DATA_PARALLEL_SIZE}"
+        - "--time-to-first-token=10000" # for PoC / 10s
+        - "--max-num-seqs=1" # for PoC
         ports:
         - name: prefill-http
           containerPort: 8000
