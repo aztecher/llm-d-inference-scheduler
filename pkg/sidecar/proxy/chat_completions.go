@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/common/routing"
+	sidecarmetrics "github.com/llm-d/llm-d-inference-scheduler/pkg/sidecar/metrics"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/telemetry"
 )
 
@@ -98,6 +99,9 @@ func (s *Server) disaggregatedPrefillHandler(apiType APIType) http.HandlerFunc {
 				attribute.Bool("llm_d.pd_proxy.disaggregation_used", false),
 				attribute.String("llm_d.pd_proxy.reason", "no_prefill_header"),
 			)
+			// EPP did not set x-prefiller-host-port for this request.
+			// The runtime will short-circuit to local decode below.
+			sidecarmetrics.RecordPDProtocol(sidecarmetrics.PathPassthrough)
 		} else {
 			span.SetAttributes(
 				attribute.Bool("llm_d.pd_proxy.disaggregation_used", true),

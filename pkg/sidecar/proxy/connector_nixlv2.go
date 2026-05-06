@@ -19,6 +19,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	sidecarmetrics "github.com/llm-d/llm-d-inference-scheduler/pkg/sidecar/metrics"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/telemetry"
 )
 
@@ -136,7 +138,7 @@ func (s *Server) runNIXLProtocolV2(w http.ResponseWriter, r *http.Request, prefi
 	}
 
 	// 2. Forward request to prefiller
-	s.logger.V(4).Info("sending prefill request", "to", prefillPodHostPort)
+	s.logger.V(4).Info("sending prefill request", "to", prefillPodHostPort, "request_id", uuidStr)
 	s.logger.V(5).Info("Prefill request", "body", string(pbody))
 	pw := &bufferedResponseWriter{}
 	prefillHandler.ServeHTTP(pw, preq)
@@ -146,14 +148,31 @@ func (s *Server) runNIXLProtocolV2(w http.ResponseWriter, r *http.Request, prefi
 		attribute.Int("llm_d.pd_proxy.prefill.status_code", pw.statusCode),
 		attribute.Float64("llm_d.pd_proxy.prefill.duration_ms", float64(prefillDuration.Milliseconds())),
 	)
+	sidecarmetrics.ObservePrefillDuration(prefillPodHostPort, prefillDuration.Seconds())
 
 	if isHTTPError(pw.statusCode) {
-		s.logger.Error(err, "request failed", "code", pw.statusCode, "body", pw.buffer.String())
+		// Record the prefill request as a failure with the status_code label.
+		sidecarmetrics.RecordPrefillRequest(prefillPodHostPort,
+			fmt.Sprintf("http_%d", pw.statusCode))
+
+		s.logger.Error(err, "request failed", "code", pw.statusCode, "body", pw.buffer.String(), "request_id", uuidStr)
 		prefillSpan.SetStatus(codes.Error, "prefill request failed")
 		prefillSpan.End()
 
 		if shouldFallbackToDecode(pw) {
-			s.logger.Info("fallback to decode", "request_id", uuidStr)
+			// CRITICAL: This is the silent disagg-bypass path. The sidecar pretends
+			// the request was decode-only, even though the EPP scheduled it as PD.
+			// Without this metric, the divergence is invisible to operators.
+			reason := classifyFallbackReason(pw.statusCode)
+			sidecarmetrics.RecordPrefillFallback(reason)
+			sidecarmetrics.RecordPDProtocol(sidecarmetrics.PathFallback)
+			// Elevate to a warning level so the event is highly visible in logs.
+			s.logger.Info("WARN: fallback to decode (silent disagg bypass)",
+				"request_id", uuidStr,
+				"prefiller", prefillPodHostPort,
+				"prefill_status_code", pw.statusCode,
+				"prefill_duration_ms", prefillDuration.Milliseconds(),
+				"reason", reason)
 			r.Body = io.NopCloser(bytes.NewReader(original))
 			s.decoderProxy.ServeHTTP(w, r)
 		} else {
@@ -171,6 +190,10 @@ func (s *Server) runNIXLProtocolV2(w http.ResponseWriter, r *http.Request, prefi
 		return
 	}
 	prefillSpan.End()
+
+	// Record successful prefill request (status_code in 2xx range and not in fallback path).
+	sidecarmetrics.RecordPrefillRequest(prefillPodHostPort, sidecarmetrics.StatusOK)
+	sidecarmetrics.RecordPDProtocol(sidecarmetrics.PathDisagg)
 
 	// Process response - extract p/d fields
 	var prefillerResponse map[string]any

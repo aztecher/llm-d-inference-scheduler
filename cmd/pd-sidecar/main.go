@@ -16,10 +16,12 @@ limitations under the License.
 package main
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/pflag"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	sidecarmetrics "github.com/llm-d/llm-d-inference-scheduler/pkg/sidecar/metrics"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/sidecar/proxy"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/sidecar/version"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/telemetry"
@@ -67,6 +69,16 @@ func main() {
 
 	logger.Info("Proxy starting", "Built on", version.BuildRef, "From Git SHA", version.CommitSHA)
 	logger.Info("Proxy configuration", "config", opts.Config)
+
+	// Register sidecar Prometheus collectors with the default registry so /metrics exposes them.
+	for _, c := range sidecarmetrics.GetCollectors() {
+		if err := prometheus.Register(c); err != nil {
+			// Already-registered errors are non-fatal; anything else is a programming bug.
+			if _, dup := err.(prometheus.AlreadyRegisteredError); !dup {
+				logger.Error(err, "Failed to register sidecar metric collector")
+			}
+		}
+	}
 
 	proxyServer := proxy.NewProxy(opts.Config)
 	if err := proxyServer.Start(ctx); err != nil {

@@ -170,3 +170,18 @@ func shouldFallbackToDecode(pw *bufferedResponseWriter) bool {
 	}
 	return true
 }
+
+// classifyFallbackReason returns a coarse category for the silent-fallback metric label.
+// Kept conservative to avoid label cardinality explosion; granular status codes are still
+// available via the structured log message at the fallback site.
+func classifyFallbackReason(statusCode int) string {
+	switch {
+	case statusCode >= http.StatusInternalServerError:
+		return "5xx"
+	case statusCode >= http.StatusBadRequest:
+		return "4xx"
+	default:
+		// Includes statusCode==0 (transport-level errors, no HTTP response written).
+		return "other"
+	}
+}

@@ -71,11 +71,95 @@ var (
 		},
 		[]string{"model_name", "action"},
 	)
+
+	// SchedulerPoolSaturation records the most recent saturation value computed by a
+	// SaturationDetector for a given pool.
+	//
+	// This is the value that SLORiskDecider compares against the configured threshold.
+	// Exposing it directly lets operators verify the decision logic without having to
+	// reproduce the calculation in PromQL (which cannot replicate the staleness fallback
+	// nor any plugin-internal state).
+	//
+	// Labels:
+	//   - pool:     "prefill" / "decode" / "flex" — which pool the saturation refers to
+	//   - detector: name of the SaturationDetector plugin used (e.g. "utilization-detector")
+	SchedulerPoolSaturation = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: SchedulerSubsystem,
+			Name:      "pool_saturation",
+			Help:      metrics.HelpMsgWithStability("Most recent saturation value computed by a SaturationDetector for a pool", compbasemetrics.ALPHA),
+		},
+		[]string{"pool", "detector"},
+	)
+
+	// SchedulerPoolSaturationThreshold records the configured saturation threshold for a pool.
+	// Constant per process lifetime, but exposed as a gauge so dashboards can plot the
+	// threshold line alongside the live saturation value without hard-coding it in PromQL.
+	SchedulerPoolSaturationThreshold = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: SchedulerSubsystem,
+			Name:      "pool_saturation_threshold",
+			Help:      metrics.HelpMsgWithStability("Configured saturation threshold above which the SLORiskDecider activates FlexibleDecoder", compbasemetrics.ALPHA),
+		},
+		[]string{"pool", "detector"},
+	)
+
+	// SchedulerSLORiskEvaluationCount records every SLORiskDecider evaluation, regardless
+	// of outcome. Combined with flex_decoder_activation_total this lets operators compute
+	// the rate at which saturation actually crossed the threshold:
+	//
+	//   rate(slo_risk_evaluations_total{decision="above_threshold"}[5m])
+	//     / rate(slo_risk_evaluations_total[5m])
+	//
+	// Labels:
+	//   - decision: "above_threshold" / "below_threshold" / "no_endpoints" / "unwired"
+	SchedulerSLORiskEvaluationCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: SchedulerSubsystem,
+			Name:      "slo_risk_evaluations_total",
+			Help:      metrics.HelpMsgWithStability("Total number of SLORiskDecider evaluations, broken down by outcome", compbasemetrics.ALPHA),
+		},
+		[]string{"decision"},
+	)
+)
+
+// SLORiskDecision label values for SchedulerSLORiskEvaluationCount.
+const (
+	SLORiskDecisionAboveThreshold = "above_threshold"
+	SLORiskDecisionBelowThreshold = "below_threshold"
+	SLORiskDecisionNoEndpoints    = "no_endpoints"
+	SLORiskDecisionUnwired        = "unwired"
 )
 
 // GetCollectors returns all custom collectors for the llm-d-inference-scheduler.
 func GetCollectors() []prometheus.Collector {
-	return []prometheus.Collector{SchedulerPDDecisionCount, SchedulerDisaggDecisionCount, SchedulerFlexDecoderActivationCount}
+	return []prometheus.Collector{
+		SchedulerPDDecisionCount,
+		SchedulerDisaggDecisionCount,
+		SchedulerFlexDecoderActivationCount,
+		SchedulerPoolSaturation,
+		SchedulerPoolSaturationThreshold,
+		SchedulerSLORiskEvaluationCount,
+	}
+}
+
+// RecordPoolSaturation updates the saturation gauge for a given pool.
+// Call this after every SaturationDetector.Saturation() invocation so dashboards
+// can observe the live value the SLORiskDecider is comparing against.
+func RecordPoolSaturation(pool, detector string, value float64) {
+	SchedulerPoolSaturation.WithLabelValues(pool, detector).Set(value)
+}
+
+// RecordPoolSaturationThreshold sets the threshold gauge once per pool.
+// Typically called from the SLORiskDecider's constructor.
+func RecordPoolSaturationThreshold(pool, detector string, threshold float64) {
+	SchedulerPoolSaturationThreshold.WithLabelValues(pool, detector).Set(threshold)
+}
+
+// RecordSLORiskEvaluation increments the SLO-risk evaluation counter.
+// decision must be one of SLORiskDecision* constants.
+func RecordSLORiskEvaluation(decision string) {
+	SchedulerSLORiskEvaluationCount.WithLabelValues(decision).Inc()
 }
 
 // RecordFlexDecoderActivation increments the FlexibleDecoder activation counter.

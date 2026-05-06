@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/plugin"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/scheduling"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/filter/bylabel"
+	schedmetrics "github.com/llm-d/llm-d-inference-scheduler/pkg/metrics"
 )
 
 const (
@@ -20,6 +23,20 @@ const (
 	SLORiskDeciderPluginType = "slo-risk-decider"
 
 	defaultSaturationThreshold = 1.0
+
+	// poolLabelPrefill is the gauge label for the Prefill pool. Currently the
+	// SLORiskDecider only ever evaluates the Prefill pool, so this is constant.
+	poolLabelPrefill = "prefill"
+
+	// envForceSaturation lets operators override the computed saturation value
+	// during PoC verification. When set to a parseable float, the SLORiskDecider
+	// skips the SaturationDetector entirely and uses this value. Useful for
+	// validating the FlexibleDecoder activation pipeline without having to
+	// physically saturate the Prefill pool.
+	//
+	// WARNING: This bypasses normal logic; a WARN log is emitted on every
+	// invocation while it is active.
+	envForceSaturation = "LLM_D_FORCE_SATURATION"
 )
 
 // PrefillEndpointProvider is a function that returns the current list of Prefill pool endpoints.
@@ -98,6 +115,16 @@ type SLORiskDecider struct {
 	config             SLORiskDeciderConfig
 	saturationDetector fwkflowcontrol.SaturationDetector
 	prefillEndpoints   PrefillEndpointProvider
+
+	// forceSaturation, when non-nil, overrides the computed saturation value.
+	// Set via the LLM_D_FORCE_SATURATION env var at construction time.
+	// PoC-only debug feature; do not use in production.
+	forceSaturation *float64
+
+	// detectorName is recorded as a label on the saturation gauges so dashboards
+	// can distinguish e.g. utilization-detector vs concurrency-detector when both
+	// configurations are exercised.
+	detectorName string
 }
 
 // SLORiskDeciderPluginFactory defines the factory function for the SLORiskDecider.
@@ -135,6 +162,26 @@ func SLORiskDeciderPluginFactory(name string, rawParameters json.RawMessage, han
 	if err != nil {
 		return nil, fmt.Errorf("failed to create %s plugin: %w", SLORiskDeciderPluginType, err)
 	}
+	decider.detectorName = config.SaturationDetectorPluginName
+
+	// Expose the configured threshold as a gauge so dashboards can render the
+	// threshold line alongside the live saturation value.
+	schedmetrics.RecordPoolSaturationThreshold(poolLabelPrefill, decider.detectorName, decider.config.SaturationThreshold)
+
+	// Honor the debug override env var if set.
+	if v, ok := os.LookupEnv(envForceSaturation); ok {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			decider.forceSaturation = &f
+			logger.Info("LLM_D_FORCE_SATURATION is set — the SLORiskDecider will ignore the SaturationDetector and always return this value. PoC-only debug feature.",
+				"forced_saturation", f,
+				"threshold", decider.config.SaturationThreshold,
+				"will_activate_flexd", f >= decider.config.SaturationThreshold)
+		} else {
+			logger.Error(err, "LLM_D_FORCE_SATURATION is set but not parseable as float; ignoring",
+				"value", v)
+		}
+	}
+
 	return decider.WithName(name), nil
 }
 
@@ -184,15 +231,72 @@ func (d *SLORiskDecider) Disaggregate(ctx context.Context, request *scheduling.I
 // disaggregate checks Prefill pool saturation and returns true when FlexibleDecoder
 // should temporarily act as a Prefiller to protect TTFT SLO.
 // The endpoint argument (selected Decode endpoint) is not used for the saturation check.
-func (d *SLORiskDecider) disaggregate(ctx context.Context, _ *scheduling.InferenceRequest, _ scheduling.Endpoint) bool {
+func (d *SLORiskDecider) disaggregate(ctx context.Context, request *scheduling.InferenceRequest, _ scheduling.Endpoint) bool {
+	logger := log.FromContext(ctx).WithName(SLORiskDeciderPluginType)
+
+	requestID := ""
+	if request != nil {
+		requestID = request.RequestId
+	}
+
 	if d.prefillEndpoints == nil {
 		// No provider wired yet: conservative behaviour — don't activate FlexibleDecoder.
+		schedmetrics.RecordSLORiskEvaluation(schedmetrics.SLORiskDecisionUnwired)
+		logger.V(1).Info("disaggregate skipped: PrefillEndpointProvider not wired",
+			"request_id", requestID,
+			"decision", false,
+			"reason", "unwired")
 		return false
 	}
 	endpoints := d.prefillEndpoints()
 	if len(endpoints) == 0 {
+		schedmetrics.RecordSLORiskEvaluation(schedmetrics.SLORiskDecisionNoEndpoints)
+		logger.V(1).Info("disaggregate skipped: no Prefill endpoints available",
+			"request_id", requestID,
+			"decision", false,
+			"reason", "no_endpoints")
 		return false
 	}
+
+	// PoC debug override: if LLM_D_FORCE_SATURATION is set, bypass the detector.
+	if d.forceSaturation != nil {
+		forced := *d.forceSaturation
+		schedmetrics.RecordPoolSaturation(poolLabelPrefill, d.detectorName, forced)
+		decision := forced >= d.config.SaturationThreshold
+		if decision {
+			schedmetrics.RecordSLORiskEvaluation(schedmetrics.SLORiskDecisionAboveThreshold)
+		} else {
+			schedmetrics.RecordSLORiskEvaluation(schedmetrics.SLORiskDecisionBelowThreshold)
+		}
+		// WARN-level on every call so the override remains highly visible in logs.
+		logger.Info("disaggregate using LLM_D_FORCE_SATURATION override (PoC debug)",
+			"request_id", requestID,
+			"forced_saturation", forced,
+			"threshold", d.config.SaturationThreshold,
+			"decision", decision,
+			"pool_size", len(endpoints))
+		return decision
+	}
+
 	saturation := d.saturationDetector.Saturation(ctx, endpoints)
-	return saturation >= d.config.SaturationThreshold
+	schedmetrics.RecordPoolSaturation(poolLabelPrefill, d.detectorName, saturation)
+	decision := saturation >= d.config.SaturationThreshold
+
+	if decision {
+		schedmetrics.RecordSLORiskEvaluation(schedmetrics.SLORiskDecisionAboveThreshold)
+	} else {
+		schedmetrics.RecordSLORiskEvaluation(schedmetrics.SLORiskDecisionBelowThreshold)
+	}
+
+	// V(2) keeps this out of normal operator logs but makes it readily available
+	// during PoC validation: `kubectl logs ... -v 2 | grep slo-risk-decider`.
+	logger.V(2).Info("disaggregate evaluated",
+		"request_id", requestID,
+		"saturation", saturation,
+		"threshold", d.config.SaturationThreshold,
+		"decision", decision,
+		"pool_size", len(endpoints),
+		"detector", d.detectorName)
+
+	return decision
 }

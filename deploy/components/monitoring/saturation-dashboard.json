@@ -1,0 +1,557 @@
+{
+  "title": "FlexibleDecoder Saturation",
+  "uid": "flexd-saturation",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "tags": ["flexd", "llm-d", "poc"],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "label": "Datasource"
+      },
+      {
+        "name": "queueThreshold",
+        "type": "constant",
+        "current": { "value": "2", "text": "2" },
+        "query": "2",
+        "label": "queueDepthThreshold (UtilizationDetector)"
+      },
+      {
+        "name": "kvThreshold",
+        "type": "constant",
+        "current": { "value": "0.5", "text": "0.5" },
+        "query": "0.5",
+        "label": "kvCacheUtilThreshold (UtilizationDetector)"
+      },
+      {
+        "name": "satThreshold",
+        "type": "constant",
+        "current": { "value": "0.5", "text": "0.5" },
+        "query": "0.5",
+        "label": "saturationThreshold (SLORiskDecider)"
+      },
+      {
+        "name": "selfQueueThreshold",
+        "type": "constant",
+        "current": { "value": "50", "text": "50" },
+        "query": "50",
+        "label": "queueDepthThreshold (SelfDecodeCapacityDecider)"
+      },
+      {
+        "name": "selfKvThreshold",
+        "type": "constant",
+        "current": { "value": "0.5", "text": "0.5" },
+        "query": "0.5",
+        "label": "kvCacheThreshold (SelfDecodeCapacityDecider)"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Decision Indicators",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Pool Saturation (now)",
+      "description": "Average of per-pod max(queue/queueThreshold, kv/kvThreshold) across Prefill pods. SLORiskDecider fires FlexD when this >= saturationThreshold.",
+      "id": 1,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg( max by (pod) ( (vllm:num_requests_waiting{pod=~\"vllm-p-.*\"} / $queueThreshold) or (vllm:kv_cache_usage_perc{pod=~\"vllm-p-.*\"} / $kvThreshold) ) )",
+          "legendFormat": "saturation"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "orange", "value": 0.4 },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "SLO Risk (Saturated?)",
+      "description": "1 = saturated (FlexD will activate), 0 = below threshold",
+      "id": 2,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(avg( max by (pod) ( (vllm:num_requests_waiting{pod=~\"vllm-p-.*\"} / $queueThreshold) or (vllm:kv_cache_usage_perc{pod=~\"vllm-p-.*\"} / $kvThreshold) ) ) >= bool $satThreshold)",
+          "legendFormat": "saturated"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "OK", "color": "green" }, "1": { "text": "SATURATED", "color": "red" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "FlexD Activations (last 5m)",
+      "description": "Total FlexD activations across all action types in the past 5 minutes",
+      "id": 3,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(llm_d_inference_scheduler_flex_decoder_activation_total[5m]))",
+          "legendFormat": "activations"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "blue", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "PD Disagg Rate (last 5m)",
+      "description": "Fraction of requests that went through Prefill-Decode disaggregation",
+      "id": 4,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(llm_d_inference_scheduler_disagg_decision_total{decision_type=\"prefill-decode\"}[5m])) / sum(rate(llm_d_inference_scheduler_disagg_decision_total[5m]))",
+          "legendFormat": "%"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Pool Saturation (the decision metric)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 101,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Prefill Pool Saturation vs threshold",
+      "description": "Pool saturation = avg over Prefill pods of max(queue/queueThreshold, kv/kvThreshold). Red line = saturationThreshold; crossing it activates FlexD.",
+      "id": 10,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 18, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg( max by (pod) ( (vllm:num_requests_waiting{pod=~\"vllm-p-.*\"} / $queueThreshold) or (vllm:kv_cache_usage_perc{pod=~\"vllm-p-.*\"} / $kvThreshold) ) )",
+          "legendFormat": "Pool Saturation"
+        },
+        {
+          "refId": "B",
+          "expr": "$satThreshold",
+          "legendFormat": "saturationThreshold"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "thresholdsStyle": { "mode": "line+area" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "saturationThreshold" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max", "mean"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD activations (overlay)",
+      "description": "Spikes here should align with the moments Pool Saturation crosses the threshold.",
+      "id": 11,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (rate(llm_d_inference_scheduler_flex_decoder_activation_total[1m]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 80 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Per-Pod Breakdown (Prefill pool)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "id": 102,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-Pod Saturation Score = max(queue/Q, kv/K)",
+      "description": "If only ONE pod's line reaches the threshold while others stay low, the AVERAGE may not cross it — explains why FlexD doesn't fire.",
+      "id": 20,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pod) ( (vllm:num_requests_waiting{pod=~\"vllm-p-.*\"} / $queueThreshold) or (vllm:kv_cache_usage_perc{pod=~\"vllm-p-.*\"} / $kvThreshold) )",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"] }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue Depth per Prefill pod",
+      "description": "Raw vllm:num_requests_waiting. Threshold line at $queueThreshold (the value that yields PodScore=1.0 from the queue side).",
+      "id": 21,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 6, "x": 12, "y": 18 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vllm:num_requests_waiting{pod=~\"vllm-p-.*\"}",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "KV Cache % per Prefill pod",
+      "description": "Raw vllm:kv_cache_usage_perc. Threshold line at $kvThreshold.",
+      "id": 22,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 18 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vllm:kv_cache_usage_perc{pod=~\"vllm-p-.*\"}",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "max": 1,
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "type": "row",
+      "title": "FlexibleDecoder Pool (Self-Decode Capacity)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "id": 103,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD Pool Self-Decode Capacity",
+      "description": "Per-pod max(queue/selfQueueThreshold, kv/selfKvThreshold) across FlexD pods. If a pod's score < 1.0, SelfDecodeCapacityDecider returns true (self_decode chosen). Otherwise prefill_and_forward.",
+      "id": 30,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 28 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pod) ( (vllm:num_requests_waiting{pod=~\"vllm-flexd-.*\"} / $selfQueueThreshold) or (vllm:kv_cache_usage_perc{pod=~\"vllm-flexd-.*\"} / $selfKvThreshold) )",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"] }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD pool: queue & KV (raw)",
+      "description": "Raw running/waiting/KV signals for FlexD pods. Use to see whether FlexD is busy enough for SelfDecodeCapacityDecider to pick prefill_and_forward.",
+      "id": 31,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 28 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vllm:num_requests_waiting{pod=~\"vllm-flexd-.*\"}",
+          "legendFormat": "wait/{{pod}}"
+        },
+        {
+          "refId": "B",
+          "expr": "vllm:num_requests_running{pod=~\"vllm-flexd-.*\"}",
+          "legendFormat": "run/{{pod}}"
+        },
+        {
+          "refId": "C",
+          "expr": "vllm:kv_cache_usage_perc{pod=~\"vllm-flexd-.*\"}",
+          "legendFormat": "kv/{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "custom": { "drawStyle": "line", "lineWidth": 1 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"] }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Decision Counters",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 104,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD activation rate (by action)",
+      "description": "Activation rate decomposed by routing decision",
+      "id": 40,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 38 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (rate(llm_d_inference_scheduler_flex_decoder_activation_total[1m]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max", "mean"] }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disagg decision rate (by decision_type)",
+      "description": "All scheduling decisions, broken down by routing path",
+      "id": 41,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 38 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (decision_type) (rate(llm_d_inference_scheduler_disagg_decision_total[1m]))",
+          "legendFormat": "{{decision_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max", "mean"] }
+      }
+    },
+    {
+      "type": "row",
+      "title": "TTFT (effect of FlexD activation)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 47 },
+      "id": 105,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Prefill TTFT P50/P95/P99",
+      "description": "If FlexD is helping, P95/P99 should not blow up even when Pool Saturation is high.",
+      "id": 50,
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 48 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{pod=~\"vllm-p-.*\"}[1m])))",
+          "legendFormat": "P50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{pod=~\"vllm-p-.*\"}[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{pod=~\"vllm-p-.*\"}[1m])))",
+          "legendFormat": "P99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": { "drawStyle": "line", "lineWidth": 2 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    }
+  ]
+}
