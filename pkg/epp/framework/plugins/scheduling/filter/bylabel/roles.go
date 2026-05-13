@@ -29,12 +29,18 @@ const (
 	// Deprecated: Use RolePrefillDecode instead. This constant is maintained for backward compatibility.
 	RoleBoth = "both"
 
+	// RoleFlexibleDecode set for workers that normally act as decoders but can temporarily act as
+	// prefill workers when the prefill pool is saturated and TTFT SLO is at risk.
+	RoleFlexibleDecode = "flexible-decode"
+
 	// DecodeRoleType is the type of the DecodeFilter
 	DecodeRoleType = "decode-filter"
 	// PrefillRoleType is the type of the PrefillFilter
 	PrefillRoleType = "prefill-filter"
 	// EncodeRoleType is the type of the EncodeFilter
 	EncodeRoleType = "encode-filter"
+	// FlexibleDecodeRoleType is the type of the FlexibleDecodeFilter
+	FlexibleDecodeRoleType = "flexible-decode-filter"
 )
 
 // DecodeRoleFactory defines the factory function for the Decode filter.
@@ -43,8 +49,9 @@ func DecodeRoleFactory(name string, _ json.RawMessage, _ plugin.Handle) (plugin.
 }
 
 // NewDecodeRole creates and returns an instance of the Filter configured for decode role.
+// Includes flexible-decode workers since they normally act as decoders.
 func NewDecodeRole() *ByLabel {
-	return NewByLabel(DecodeRoleType, RoleLabel, true, RoleDecode, RolePrefillDecode, RoleBoth, RoleEncodePrefillDecode)
+	return NewByLabel(DecodeRoleType, RoleLabel, true, RoleDecode, RolePrefillDecode, RoleBoth, RoleEncodePrefillDecode, RoleFlexibleDecode)
 }
 
 // PrefillRoleFactory defines the factory function for the Prefill filter.
@@ -67,4 +74,15 @@ func EncodeRoleFactory(name string, _ json.RawMessage, _ plugin.Handle) (plugin.
 // Accepts pods with roles: encode, encode-prefill, or encode-prefill-decode.
 func NewEncodeRole() *ByLabel {
 	return NewByLabel(EncodeRoleType, RoleLabel, false, RoleEncode, RoleEncodePrefill, RoleEncodePrefillDecode)
+}
+
+// FlexibleDecodeRoleFactory defines the factory function for the FlexibleDecode filter.
+func FlexibleDecodeRoleFactory(name string, _ json.RawMessage, _ plugin.Handle) (plugin.Plugin, error) {
+	return NewFlexibleDecodeRole().WithName(name), nil
+}
+
+// NewFlexibleDecodeRole creates and returns an instance of the Filter configured for the flexible-decode role only.
+// Used to select exclusively flexible-decode workers (e.g., when using them as temporary prefill workers).
+func NewFlexibleDecodeRole() *ByLabel {
+	return NewByLabel(FlexibleDecodeRoleType, RoleLabel, false, RoleFlexibleDecode)
 }
