@@ -32,38 +32,42 @@ const (
 var _ requestcontrol.PreRequest = &HeadersHandler{}
 
 type disaggHeadersHandlerParameters struct {
-	PrefillProfile string `json:"prefillProfile"`
-	EncodeProfile  string `json:"encodeProfile"`
+	PrefillProfile        string `json:"prefillProfile"`
+	EncodeProfile         string `json:"encodeProfile"`
+	FlexibleDecodeProfile string `json:"flexibleDecodeProfile,omitempty"`
 }
 
 // HeadersHandlerFactory defines the factory function for the HeadersHandler
 func HeadersHandlerFactory(name string, rawParameters json.RawMessage, _ plugin.Handle) (plugin.Plugin, error) {
 	parameters := disaggHeadersHandlerParameters{
-		PrefillProfile: defaultPrefillProfile,
-		EncodeProfile:  defaultEncodeProfile,
+		PrefillProfile:        defaultPrefillProfile,
+		EncodeProfile:         defaultEncodeProfile,
+		FlexibleDecodeProfile: defaultFlexibleDecodeProfile,
 	}
 	if rawParameters != nil {
 		if err := json.Unmarshal(rawParameters, &parameters); err != nil {
 			return nil, fmt.Errorf("failed to parse the parameters of the '%s' pre-request plugin - %w", DisaggHeadersHandlerType, err)
 		}
 	}
-	return NewHeadersHandler(parameters.PrefillProfile, parameters.EncodeProfile).WithName(name), nil
+	return NewHeadersHandler(parameters.PrefillProfile, parameters.EncodeProfile, parameters.FlexibleDecodeProfile).WithName(name), nil
 }
 
 // NewHeadersHandler initializes a new HeadersHandler and returns its pointer.
-func NewHeadersHandler(prefillProfile, encodeProfile string) *HeadersHandler {
+func NewHeadersHandler(prefillProfile, encodeProfile, flexibleDecodeProfile string) *HeadersHandler {
 	return &HeadersHandler{
-		typedName:      plugin.TypedName{Type: DisaggHeadersHandlerType},
-		prefillProfile: prefillProfile,
-		encodeProfile:  encodeProfile,
+		typedName:             plugin.TypedName{Type: DisaggHeadersHandlerType},
+		prefillProfile:        prefillProfile,
+		encodeProfile:         encodeProfile,
+		flexibleDecodeProfile: flexibleDecodeProfile,
 	}
 }
 
 // HeadersHandler PreRequest plugin that sets both prefill and encode disaggregation headers.
 type HeadersHandler struct {
-	typedName      plugin.TypedName
-	prefillProfile string
-	encodeProfile  string
+	typedName             plugin.TypedName
+	prefillProfile        string
+	encodeProfile         string
+	flexibleDecodeProfile string
 }
 
 // TypedName returns the typed name of the plugin.
@@ -107,9 +111,15 @@ func (p *HeadersHandler) PreRequest(ctx context.Context, request *scheduling.Inf
 	}
 	span.SetAttributes(attribute.String("gen_ai.request.id", request.RequestId))
 
-	// Prefill header
+	// Prefill header: check regular prefill first, then flexible-decode as fallback prefiller.
 	delete(request.Headers, routing.PrefillEndpointHeader) // clear header, if already set
 	prefillProfileRunResult := schedulingResult.ProfileResults[p.prefillProfile]
+	if prefillProfileRunResult == nil && p.flexibleDecodeProfile != "" {
+		if flexRes, ok := schedulingResult.ProfileResults[p.flexibleDecodeProfile]; ok &&
+			schedulingResult.PrimaryProfileName != p.flexibleDecodeProfile {
+			prefillProfileRunResult = flexRes
+		}
+	}
 	switch {
 	case prefillProfileRunResult == nil:
 		span.SetAttributes(

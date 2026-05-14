@@ -4,6 +4,7 @@ package plugins
 import (
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/plugin"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/datalayer/extractor/models"
+	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/requestcontrol/dataproducer/poolview"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/filter/bylabel"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/profilehandler/dataparallel"
@@ -23,6 +24,7 @@ func RegisterAllPlugins() {
 	plugin.Register(bylabel.EncodeRoleType, bylabel.EncodeRoleFactory)
 	plugin.Register(bylabel.DecodeRoleType, bylabel.DecodeRoleFactory)
 	plugin.Register(bylabel.PrefillRoleType, bylabel.PrefillRoleFactory)
+	plugin.Register(bylabel.FlexibleDecodeRoleType, bylabel.FlexibleDecodeRoleFactory)
 	plugin.Register(disagg.DisaggHeadersHandlerType, disagg.HeadersHandlerFactory)
 	// Legacy alias - existing YAML configs using prefill-header-handler continue to work.
 	plugin.Register(disagg.PrefillHeaderHandlerType, disagg.HeadersHandlerFactory) //nolint:staticcheck // intentional: keep backward compatibility (SA1019)
@@ -45,4 +47,7 @@ func RegisterAllPlugins() {
 	// ep decider plugins
 	plugin.Register(disagg.AlwaysDisaggMulimodalPluginType, disagg.AlwaysDisaggMulimodalDeciderPluginFactory)
 	plugin.Register(contextlengthaware.ContextLengthAwareType, contextlengthaware.Factory)
+	// flexible-decode plugins
+	plugin.Register(disagg.SLOBasedFlexDeciderPluginType, disagg.SLOBasedFlexDeciderPluginFactory)
+	plugin.Register(poolview.PoolViewProducerPluginType, poolview.PoolViewProducerFactory)
 }
