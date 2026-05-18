@@ -31,6 +31,18 @@ import (
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/metrics"
 )
 
+// "flexible-decode" is mapped to "decode".
+func normalizePodType(role string) string {
+	switch role {
+	case "prefill", "decode":
+		return role
+	case "flexible-decode":
+		return "decode"
+	default:
+		return ""
+	}
+}
+
 // buildPredictionRequest constructs a prediction request from endpoint metrics and request data.
 func buildPredictionRequest(
 	endpointRoleLabel string,
@@ -42,9 +54,8 @@ func buildPredictionRequest(
 ) latencypredictor.PredictionRequest {
 	podType := ""
 	if endpointRoleLabel != "" && targetEndpointMetadata != nil && targetEndpointMetadata.Labels != nil {
-		podType = targetEndpointMetadata.Labels[endpointRoleLabel]
+		podType = normalizePodType(targetEndpointMetadata.Labels[endpointRoleLabel])
 	}
-
 	return latencypredictor.PredictionRequest{
 		KVCachePercentage:  metrics.KVCacheUsagePercent,
 		InputTokenLength:   len(strings.Fields(prompt)),
@@ -70,9 +81,8 @@ func buildTrainingEntry(
 ) latencypredictor.TrainingEntry {
 	podType := ""
 	if endpointRoleLabel != "" && targetEndpointMetadata != nil && targetEndpointMetadata.Labels != nil {
-		podType = targetEndpointMetadata.Labels[endpointRoleLabel]
+		podType = normalizePodType(targetEndpointMetadata.Labels[endpointRoleLabel])
 	}
-
 	return latencypredictor.TrainingEntry{
 		KVCachePercentage:  m.KVCacheUsagePercent,
 		InputTokenLength:   len(strings.Fields(prompt)),

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/types"
@@ -188,4 +189,59 @@ func TestBulkPredictWithMetrics_NilMetricsState(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, results)
 	assert.True(t, strings.Contains(err.Error(), "metrics state at index 0 cannot be nil"))
+}
+
+// TestNormalizePodType verifies pod_type values are mapped to the trainer's
+// accepted vocabulary ("", "prefill", "decode"); other values would NaN.
+func TestNormalizePodType(t *testing.T) {
+	tests := []struct {
+		name string
+		role string
+		want string
+	}{
+		{name: "empty role passes through", role: "", want: ""},
+		{name: "prefill role preserved", role: "prefill", want: "prefill"},
+		{name: "decode role preserved", role: "decode", want: "decode"},
+		{name: "flexible-decode mapped to prefill", role: "flexible-decode", want: "decode"},
+		{name: "unknown role mapped to monolithic", role: "encode-prefill-decode", want: ""},
+		{name: "arbitrary string mapped to monolithic", role: "some-future-role", want: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, normalizePodType(tc.role))
+		})
+	}
+}
+
+// TestBuildPredictionRequest_PodType exercises the label-extraction guard and normalisation end-to-end.
+func TestBuildPredictionRequest_PodType(t *testing.T) {
+	tests := []struct {
+		name              string
+		endpointRoleLabel string
+		meta              *fwkdl.EndpointMetadata
+		want              string
+	}{
+		{name: "no role label configured returns empty", endpointRoleLabel: "", meta: &fwkdl.EndpointMetadata{Labels: map[string]string{"llm-d.ai/role": "prefill"}}, want: ""},
+		{name: "nil metadata returns empty", endpointRoleLabel: "llm-d.ai/role", meta: nil, want: ""},
+		{name: "nil labels returns empty", endpointRoleLabel: "llm-d.ai/role", meta: &fwkdl.EndpointMetadata{}, want: ""},
+		{name: "missing label returns empty", endpointRoleLabel: "llm-d.ai/role", meta: &fwkdl.EndpointMetadata{Labels: map[string]string{"other": "decode"}}, want: ""},
+		{name: "prefill label preserved", endpointRoleLabel: "llm-d.ai/role", meta: &fwkdl.EndpointMetadata{Labels: map[string]string{"llm-d.ai/role": "prefill"}}, want: "prefill"},
+		{name: "flexible-decode label normalised to prefill", endpointRoleLabel: "llm-d.ai/role", meta: &fwkdl.EndpointMetadata{Labels: map[string]string{"llm-d.ai/role": "flexible-decode"}}, want: "decode"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildPredictionRequest(tc.endpointRoleLabel, tc.meta, fwkdl.NewMetrics(), "hello world", 0, 0.0)
+			assert.Equal(t, tc.want, got.PodType)
+		})
+	}
+}
+
+func TestBuildTrainingEntry_PodType(t *testing.T) {
+	meta := &fwkdl.EndpointMetadata{
+		NamespacedName: types.NamespacedName{Namespace: "ns", Name: "flex-0"},
+		Labels:         map[string]string{"llm-d.ai/role": "flexible-decode"},
+	}
+	got := buildTrainingEntry("llm-d.ai/role", meta, fwkdl.NewMetrics(), "hello world", 100, 10, time.Time{}, 0, 0.0)
+	assert.Equal(t, "decode", got.PodType,
+		"flexible-decode must be normalised to 'prefill' before reaching the predictor")
 }
