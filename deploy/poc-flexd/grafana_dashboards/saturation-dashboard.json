@@ -1,0 +1,1750 @@
+{
+  "title": "FlexibleDecode PoC",
+  "uid": "flexd-poc",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "tags": [
+    "flexd",
+    "llm-d",
+    "poc"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
+        "label": "Datasource"
+      },
+      {
+        "name": "ttftSloMs",
+        "type": "textbox",
+        "current": {
+          "value": "500",
+          "text": "500",
+          "selected": true
+        },
+        "options": [
+          {
+            "value": "500",
+            "text": "500",
+            "selected": true
+          }
+        ],
+        "query": "500",
+        "label": "TTFT SLO (ms)",
+        "description": "Override the TTFT SLO line shown on TTFT panels. Type any value in milliseconds and press Enter."
+      },
+      {
+        "name": "tpotSloMs",
+        "type": "textbox",
+        "current": {
+          "value": "100",
+          "text": "100",
+          "selected": true
+        },
+        "options": [
+          {
+            "value": "100",
+            "text": "100",
+            "selected": true
+          }
+        ],
+        "query": "100",
+        "label": "TPOT SLO (ms)",
+        "description": "Override the TPOT SLO line shown on TPOT panels. Type any value in milliseconds and press Enter."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Decision Indicators",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Pool Saturation (now)",
+      "description": "Live saturation value computed by the configured SaturationDetector (ttft-slo-violation-detector) for pool=prefill. SLOBasedFlexDecider activates FlexibleDecode when this >= the configured threshold.",
+      "id": 1,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "llm_d_inference_scheduler_pool_saturation{pool=\"prefill\", detector=\"ttft-slo-violation-detector\"}",
+          "legendFormat": "saturation"
+        },
+        {
+          "refId": "B",
+          "expr": "llm_d_inference_scheduler_pool_saturation_threshold{pool=\"prefill\", detector=\"ttft-slo-violation-detector\"}",
+          "legendFormat": "threshold"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.3
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 0.8
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "SLO Risk (Saturated?)",
+      "description": "1 = saturation crossed threshold. Driven by the live pool_saturation gauge.",
+      "id": 2,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(llm_d_inference_scheduler_pool_saturation{pool=\"prefill\", detector=\"ttft-slo-violation-detector\"} >= bool llm_d_inference_scheduler_pool_saturation_threshold{pool=\"prefill\", detector=\"ttft-slo-violation-detector\"})",
+          "legendFormat": "saturated"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "SATURATED",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "FlexD Activations (5m)",
+      "description": "Total FlexibleDecode activations across all action types in the past 5 minutes.",
+      "id": 3,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(llm_d_inference_scheduler_flexible_decode_activation_total[5m]))",
+          "legendFormat": "activations"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "PD Disagg Rate (5m)",
+      "description": "Fraction of requests that went through Prefill-Decode disaggregation.",
+      "id": 4,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(llm_d_inference_scheduler_disagg_decision_total{decision_type=\"prefill-decode\"}[5m])) / sum(rate(llm_d_inference_scheduler_disagg_decision_total[5m]))",
+          "legendFormat": "%"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "TTFT SLO Violations (5m)",
+      "description": "Total TTFT SLO violations recorded in the last 5 minutes (via predicted-latency).",
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(inference_objective_request_slo_violation_total{type=\"ttft\"}[5m]))",
+          "legendFormat": "ttft violations"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Pool Saturation (decision metric)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 101,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Pool Saturation vs threshold (live gauge)",
+      "description": "Pool saturation reported by ttft-slo-violation-detector for pool=prefill. The threshold gauge shows the SLOBasedFlexDecider activation cutoff. When the saturation line crosses the threshold, FlexD should activate.",
+      "id": 10,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 18,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "llm_d_inference_scheduler_pool_saturation{pool=\"prefill\", detector=\"ttft-slo-violation-detector\"}",
+          "legendFormat": "saturation"
+        },
+        {
+          "refId": "B",
+          "expr": "llm_d_inference_scheduler_pool_saturation_threshold{pool=\"prefill\", detector=\"ttft-slo-violation-detector\"}",
+          "legendFormat": "threshold"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "threshold"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "saturation"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD activations (overlay)",
+      "description": "Spikes here should align with the moments saturation crosses the threshold.",
+      "id": 11,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (rate(llm_d_inference_scheduler_flexible_decode_activation_total[1m]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Predicted vs Actual TTFT (the main verification panel)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 102,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Predicted TTFT vs Actual TTFT vs FlexD activation",
+      "description": "Side-by-side comparison: predicted-latency's prediction (from inference_objective_request_predicted_ttft_seconds), the actual TTFT (from inference_objective_request_ttft_seconds), and FlexD activation events. Use to verify (1) prediction quality, (2) whether FlexD activates at the right times, (3) whether actual TTFT stays under the SLO line.",
+      "id": 20,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(inference_objective_request_predicted_ttft_seconds_bucket[1m])))",
+          "legendFormat": "Predicted TTFT P50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_predicted_ttft_seconds_bucket[1m])))",
+          "legendFormat": "Predicted TTFT P95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(inference_objective_request_ttft_seconds_bucket[1m])))",
+          "legendFormat": "Actual TTFT P50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_ttft_seconds_bucket[1m])))",
+          "legendFormat": "Actual TTFT P95"
+        },
+        {
+          "refId": "E",
+          "expr": "($ttftSloMs / 1000)",
+          "legendFormat": "TTFT SLO"
+        },
+        {
+          "refId": "F",
+          "expr": "sum(rate(llm_d_inference_scheduler_flexible_decode_activation_total[1m]))",
+          "legendFormat": "FlexD activations (rps, right axis)"
+        },
+        {
+          "refId": "G",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(inference_objective_request_predicted_ttft_seconds_bucket[30s])))",
+          "legendFormat": "Predicted TTFT P99"
+        },
+        {
+          "refId": "H",
+          "expr": "max_over_time(histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_predicted_ttft_seconds_bucket[15s])))[1m:15s])",
+          "legendFormat": "Predicted TTFT P95 (1m max)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TTFT P50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-blue"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    4,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TTFT P95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    4,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Actual TTFT P50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Actual TTFT P95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TTFT SLO"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TTFT P99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-blue"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TTFT P95 (1m max)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FlexD activations (rps, right axis)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 60
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "FlexD activations (rps)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Predicted TPOT vs Actual TPOT vs FlexD activation",
+      "description": "Side-by-side comparison for TPOT: predicted-latency's TPOT prediction (inference_objective_request_predicted_tpot_seconds), the actual TPOT (inference_objective_request_tpot_seconds), the TPOT SLO line ($tpotSloMs), and FlexD activation events on the right axis. Read this panel stacked with the TTFT panel above to see which SLO axis is driving FlexD activations.",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(inference_objective_request_predicted_tpot_seconds_bucket[1m])))",
+          "legendFormat": "Predicted TPOT P50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_predicted_tpot_seconds_bucket[1m])))",
+          "legendFormat": "Predicted TPOT P95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(inference_objective_request_tpot_seconds_bucket[1m])))",
+          "legendFormat": "Actual TPOT P50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_tpot_seconds_bucket[1m])))",
+          "legendFormat": "Actual TPOT P95"
+        },
+        {
+          "refId": "E",
+          "expr": "($tpotSloMs / 1000)",
+          "legendFormat": "TPOT SLO"
+        },
+        {
+          "refId": "F",
+          "expr": "sum(rate(llm_d_inference_scheduler_flexible_decode_activation_total[1m]))",
+          "legendFormat": "FlexD activations (rps, right axis)"
+        },
+        {
+          "refId": "G",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(inference_objective_request_predicted_tpot_seconds_bucket[30s])))",
+          "legendFormat": "Predicted TPOT P99"
+        },
+        {
+          "refId": "H",
+          "expr": "max_over_time(histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_predicted_tpot_seconds_bucket[15s])))[1m:15s])",
+          "legendFormat": "Predicted TPOT P95 (1m max)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TPOT P50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-blue"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    4,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TPOT P95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    4,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Actual TPOT P50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Actual TPOT P95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TPOT SLO"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TPOT P99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-blue"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    4
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Predicted TPOT P95 (1m max)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FlexD activations (rps, right axis)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 60
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "FlexD activations (rps)"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD pool load (vLLM pod metrics)",
+      "description": "Live load on flexd pods, regardless of routing path. Source: vllm:num_requests_{running,waiting} and vllm:kv_cache_usage_perc filtered by pod=~\"vllm-flexd-.*\". This panel rises whenever ANY traffic lands on a flexd pod -- including normal decode-filter routing where flexd is a candidate. To check whether the load is actually driven by SLO-aware activation, cross-reference with the FlexD activation bars on the TTFT/TPOT panels above: if those bars are flat at 0 while these series move, flexd is being used as a regular decoder, not as a temporary prefiller.",
+      "id": 24,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(vllm:num_requests_running{pod=~\"vllm-flexd-.*\"})",
+          "legendFormat": "FlexD pool running"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(vllm:num_requests_waiting{pod=~\"vllm-flexd-.*\"})",
+          "legendFormat": "FlexD pool waiting"
+        },
+        {
+          "refId": "C",
+          "expr": "max(vllm:kv_cache_usage_perc{pod=~\"vllm-flexd-.*\"})",
+          "legendFormat": "FlexD max KV % (right axis)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 5
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FlexD pool running"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FlexD pool waiting"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FlexD max KV % (right axis)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    4,
+                    4
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Prediction error: |predicted - actual| TTFT P50",
+      "description": "Median absolute prediction error. Falls toward 0 as the ML predictor learns. A high error means TTFTSLOViolationDetector saturation values can be misleading.",
+      "id": 21,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "abs( histogram_quantile(0.5, sum by (le) (rate(inference_objective_request_predicted_ttft_seconds_bucket[5m]))) - histogram_quantile(0.5, sum by (le) (rate(inference_objective_request_ttft_seconds_bucket[5m]))) )",
+          "legendFormat": "|predicted P50 - actual P50|"
+        },
+        {
+          "refId": "B",
+          "expr": "abs( histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_predicted_ttft_seconds_bucket[5m]))) - histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_ttft_seconds_bucket[5m]))) )",
+          "legendFormat": "|predicted P95 - actual P95|"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD activation by action vs SLO violation rate",
+      "description": "Activation routing breakdown overlaid with TTFT SLO violations. Ideally activations should precede or accompany violations, suppressing them.",
+      "id": 22,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (rate(llm_d_inference_scheduler_flexible_decode_activation_total[1m]))",
+          "legendFormat": "FlexD: {{action}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(inference_objective_request_slo_violation_total{type=\"ttft\"}[1m]))",
+          "legendFormat": "TTFT SLO violations"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TTFT SLO violations"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "FlexibleDecode Pool (Self-Decode Capacity)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "id": 105,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD Pool Self-Decode Capacity (per-pod max)",
+      "description": "Per-pod max(queue/selfQueueThreshold, kv/selfKvThreshold) across FlexD pods. If a pod's score < 1.0, SelfDecodeCapacityDecider returns true (self_decode chosen). Otherwise prefill_and_forward.",
+      "id": 40,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pod) ( (vllm:num_requests_waiting{pod=~\"vllm-flexd-.*\"} / 50) or (vllm:kv_cache_usage_perc{pod=~\"vllm-flexd-.*\"} / 0.85) )",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD pool: queue & KV (raw)",
+      "description": "Raw running/waiting/KV signals for FlexD pods. Use to see whether FlexD is busy enough for SelfDecodeCapacityDecider to pick prefill_and_forward.",
+      "id": 41,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vllm:num_requests_waiting{pod=~\"vllm-flexd-.*\"}",
+          "legendFormat": "wait/{{pod}}"
+        },
+        {
+          "refId": "B",
+          "expr": "vllm:num_requests_running{pod=~\"vllm-flexd-.*\"}",
+          "legendFormat": "run/{{pod}}"
+        },
+        {
+          "refId": "C",
+          "expr": "vllm:kv_cache_usage_perc{pod=~\"vllm-flexd-.*\"}",
+          "legendFormat": "kv/{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "EPP Decision Counters",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 67
+      },
+      "id": 106,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "FlexD activation rate (by action)",
+      "description": "Activation rate decomposed by routing decision.",
+      "id": 50,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 68
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (rate(llm_d_inference_scheduler_flexible_decode_activation_total[1m]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disagg decision rate (by decision_type)",
+      "description": "All scheduling decisions, broken down by routing path.",
+      "id": 51,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 68
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (decision_type) (rate(llm_d_inference_scheduler_disagg_decision_total[1m]))",
+          "legendFormat": "{{decision_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "SLO Risk evaluations (by decision)",
+      "description": "Every SLOBasedFlexDecider call. Compare 'above_threshold' (= FlexD activated) vs 'below_threshold' (no activation). Useful for understanding the firing ratio.",
+      "id": 52,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 68
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (decision) (rate(llm_d_inference_scheduler_flexible_decode_activation_evaluations_total[1m]))",
+          "legendFormat": "{{decision}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "last",
+            "max",
+            "mean"
+          ]
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Latency-side metrics (TTFT / TPOT)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 77
+      },
+      "id": 108,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "TTFT P50 / P95 / P99 (overall)",
+      "description": "Aggregate actual TTFT distribution across all pods.",
+      "id": 70,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 78
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(inference_objective_request_ttft_seconds_bucket[1m])))",
+          "legendFormat": "P50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_ttft_seconds_bucket[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(inference_objective_request_ttft_seconds_bucket[1m])))",
+          "legendFormat": "P99"
+        },
+        {
+          "refId": "D",
+          "expr": "($ttftSloMs / 1000)",
+          "legendFormat": "TTFT SLO"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TTFT SLO"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "TTFT prediction duration (predictor sidecar latency)",
+      "description": "Time spent calling the prediction sidecar. High values indicate the predictor is the bottleneck and may need scaling.",
+      "id": 71,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 78
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(inference_objective_request_tpot_prediction_duration_seconds_bucket[1m])))",
+          "legendFormat": "TPOT predict P50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_objective_request_tpot_prediction_duration_seconds_bucket[1m])))",
+          "legendFormat": "TPOT predict P95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ]
+}
