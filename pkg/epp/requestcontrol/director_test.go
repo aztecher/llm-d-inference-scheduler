@@ -559,6 +559,19 @@ func TestDirector_HandleRequest(t *testing.T) {
 			wantErrCode:             errcommon.Internal,
 		},
 		{
+			name: "resource exhausted from admit request plugin is preserved",
+			reqBodyMap: map[string]any{
+				"model":  model,
+				"prompt": "prompt rejected by hard SLO",
+			},
+			mockAdmissionController: &mockAdmissionController{admitErr: nil},
+			schedulerMockSetup: func(m *mockScheduler) {
+				m.scheduleResults = defaultSuccessfulScheduleResults
+			},
+			admitRequestDenialError: errcommon.Error{Code: errcommon.ResourceExhausted, Msg: "no endpoint can satisfy configured hard latency SLO"},
+			wantErrCode:             errcommon.ResourceExhausted,
+		},
+		{
 			name: "successful chat completions request with multiple messages",
 			reqBodyMap: map[string]any{
 				"model": model,

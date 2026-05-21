@@ -6,6 +6,7 @@ import (
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/datalayer/extractor/models"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/composite"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/signals"
+	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/requestcontrol/admitter/latencyslo"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/requestcontrol/dataproducer/poolview"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/requestcontrol/dataproducer/tokenizer"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/scheduling/filter/bylabel"
@@ -56,4 +57,6 @@ func RegisterAllPlugins() {
 	plugin.Register(signals.PredictedTTFTPercentileDetectorType, signals.PredictedTTFTPercentileDetectorFactory)
 	plugin.Register(signals.QueueDepthDetectorType, signals.QueueDepthDetectorFactory)
 	plugin.Register(signals.KVCachePressureDetectorType, signals.KVCachePressureDetectorFactory)
+	plugin.Register(latencyslo.LatencyAdmissionPluginType, latencyslo.LatencyAdmissionFactory)
+	plugin.Register(latencyslo.HardSLOAdmissionPluginType, latencyslo.HardSLOAdmissionFactory)
 }

@@ -485,6 +485,7 @@ func (r *Runner) registerInTreePlugins() {
 
 	// Latency predictor plugins
 	fwkplugin.Register(latencyslo.LatencyAdmissionPluginType, latencyslo.LatencyAdmissionFactory)
+	fwkplugin.Register(latencyslo.HardSLOAdmissionPluginType, latencyslo.HardSLOAdmissionFactory)
 
 	// Latency scoring and filtering plugins
 	fwkplugin.Register(prefixcacheaffinity.PluginType, prefixcacheaffinity.Factory)

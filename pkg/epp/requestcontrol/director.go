@@ -21,6 +21,7 @@ package requestcontrol
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -204,8 +205,8 @@ func (d *Director) HandleRequest(ctx context.Context, reqCtx *handlers.RequestCo
 	}
 
 	// Run admit request plugins
-	if !d.runAdmissionPlugins(ctx, reqCtx.SchedulingRequest, snapshotOfCandidatePods) {
-		return reqCtx, errcommon.Error{Code: errcommon.Internal, Msg: "request cannot be admitted"}
+	if err := d.runAdmissionPlugins(ctx, reqCtx.SchedulingRequest, snapshotOfCandidatePods); err != nil {
+		return reqCtx, err
 	}
 
 	result, err := d.scheduler.Schedule(ctx, reqCtx.SchedulingRequest, snapshotOfCandidatePods)
@@ -457,17 +458,21 @@ func (d *Director) runPrepareDataPlugins(ctx context.Context,
 }
 
 func (d *Director) runAdmissionPlugins(ctx context.Context,
-	request *fwksched.InferenceRequest, endpoints []fwksched.Endpoint) bool {
+	request *fwksched.InferenceRequest, endpoints []fwksched.Endpoint) error {
 	loggerDebug := log.FromContext(ctx).V(logutil.DEBUG)
 	for _, plugin := range d.requestControlPlugins.admissionPlugins {
 		loggerDebug.Info("Running AdmitRequest plugin", "plugin", plugin.TypedName())
 		if denyReason := plugin.AdmitRequest(ctx, request, endpoints); denyReason != nil {
 			loggerDebug.Info("AdmitRequest plugin denied the request", "plugin", plugin.TypedName(), "reason", denyReason.Error())
-			return false
+			var errCommon errcommon.Error
+			if errors.As(denyReason, &errCommon) {
+				return errCommon
+			}
+			return errcommon.Error{Code: errcommon.Internal, Msg: denyReason.Error()}
 		}
 		loggerDebug.Info("Completed running AdmitRequest plugin successfully", "plugin", plugin.TypedName())
 	}
-	return true
+	return nil
 }
 
 func (d *Director) runResponseHeaderPlugins(ctx context.Context, request *fwksched.InferenceRequest, response *fwk.Response, targetEndpoint *fwkdl.EndpointMetadata) {
