@@ -1,0 +1,121 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "modelName" . }}-endpoint-picker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-d-inference-scheduler.labels" . | nindent 4 }}
+    app: {{ .Values.model.name }}-endpoint-picker
+spec:
+  replicas: {{ .Values.epp.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "modelName" . }}-endpoint-picker
+  template:
+    metadata:
+      labels:
+        app: {{ include "modelName" . }}-endpoint-picker
+    spec:
+      {{- if .Values.epp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.epp.nodeSelector | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "modelName" . }}-endpoint-picker
+      terminationGracePeriodSeconds: 130
+      containers:
+      - name: epp
+        image: {{ .Values.epp.image.repository }}:{{ .Values.epp.image.tag }}
+        imagePullPolicy: {{ .Values.epp.imagePullPolicy }}
+        args:
+        - --pool-name
+        - {{ include "poolName" . }}
+        - --pool-namespace
+        - {{ .Values.namespace }}
+        - --v
+        - "4"
+        - --config-file
+        - /etc/epp/epp-config.yaml
+        - --zap-encoder
+        - "json"
+        - --grpc-port
+        - "9002"
+        - --grpc-health-port
+        - "9003"
+        {{- if .Values.epp.args }}
+        {{- toYaml .Values.epp.args | nindent 8 }}
+        {{- end }}
+        env:
+        - name: TRAINING_SERVER_URL
+          value: http://training-service.{{ .Values.namespace }}.svc.cluster.local:8000
+        - name: PREDICTION_SERVER_URL
+          value: http://prediction-service.{{ .Values.namespace }}.svc.cluster.local
+        {{- if .Values.epp.env }}
+        {{- toYaml .Values.epp.env | nindent 8 }}
+        {{- end }}
+        ports:
+        - containerPort: 5557
+        - containerPort: 9002
+        - containerPort: 9003
+        - name: metrics
+          containerPort: 9090
+        livenessProbe:
+          grpc:
+            port: 9003
+            service: envoy.service.ext_proc.v3.ExternalProcessor
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          grpc:
+            port: 9003
+            service: envoy.service.ext_proc.v3.ExternalProcessor
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        volumeMounts:
+        - name: epp-config
+          mountPath: /etc/epp
+        - name: cache
+          mountPath: /cache
+        - name: uds-socket
+          mountPath: /tmp/tokenizer
+      # UDS Tokenizer sidecar - handles tokenization via gRPC over Unix Domain Socket
+      - name: uds-tokenizer
+        image: {{ .Values.uds.image.repository }}:{{ .Values.uds.image.tag }}
+        imagePullPolicy: {{ .Values.uds.imagePullPolicy }}
+        env:
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: PROBE_PORT
+          value: "8082"
+        ports:
+        - name: health
+          containerPort: 8082
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8082
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8082
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: uds-socket
+          mountPath: /tmp/tokenizer
+        - name: model-cache
+          mountPath: /models
+      volumes:
+      - name: epp-config
+        configMap:
+          name: epp-config
+      - name: cache
+        emptyDir: {}
+      # Shared volume for Unix Domain Socket communication between EPP and UDS tokenizer
+      - name: uds-socket
+        emptyDir: {}
+      # Model cache for tokenizer configurations
+      - name: model-cache
+        emptyDir: {}

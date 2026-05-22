@@ -1,0 +1,40 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "poolName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-d-inference-scheduler.labels" . | nindent 4 }}
+    {{- if .Values.httproute }}
+    {{- if .Values.httproute.externalDns }}
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.httproute.hostname }}
+    {{- end }}
+    {{- end }}
+spec:
+  {{- if .Values.httproute }}
+  {{- if .Values.httproute.hostname }}
+  hostnames:
+  - {{ .Values.httproute.hostname }}
+  {{- end }}
+  {{- end }}
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: llm-d-infra-inference-gateway
+    namespace: llm-d
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - group: inference.networking.k8s.io
+      kind: InferencePool
+      name: {{ include "poolName" . }}
+      port: 8000
+    {{- if .Values.httproute }}
+    {{- if .Values.httproute.timeout }}
+    timeouts:
+      request: {{ .Values.httproute.timeout }}
+    {{- end }}
+    {{- end }}

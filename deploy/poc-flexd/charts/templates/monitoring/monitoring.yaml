@@ -1,0 +1,39 @@
+{{- if .Values.monitoring.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: epp-metrics
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-d-inference-scheduler.labels" . | nindent 4 }}
+    {{- toYaml .Values.monitoring.servicemonitor.labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "modelName" . }}-endpoint-picker
+  endpoints:
+  - port: metrics
+    interval: 15s
+    path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: vllm-metrics
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-d-inference-scheduler.labels" . | nindent 4 }}
+    {{- toYaml .Values.monitoring.podmonitor.labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "poolName" . }}
+  podMetricsEndpoints:
+  - port: vllm
+    interval: 5s
+    path: /metrics
+  - interval: 5s
+    path: /metrics
+    port: sidecar
+{{- end }}

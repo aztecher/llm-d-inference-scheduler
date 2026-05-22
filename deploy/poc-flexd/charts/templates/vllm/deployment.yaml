@@ -1,0 +1,367 @@
+{{- $prefiller := .Values.poc.prefiller }}
+{{- $decoder := .Values.poc.decoder }}
+{{- $sidecar := .Values.poc.routingSidecar }}
+{{- $common := .Values.poc.common }}
+{{- $defaultOverride := .Values.default }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $prefiller.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ include "poolName" . }}
+    llm-d.ai/role: prefill
+spec:
+  replicas: {{ $prefiller.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "poolName" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "poolName" . }}
+        llm-d.ai/role: prefill
+    spec:
+      runtimeClassName: nvidia
+      {{- if $prefiller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml $prefiller.nodeSelector | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: vllm
+        image: {{ $prefiller.image.repository }}:{{ $prefiller.image.tag }}
+        imagePullPolicy: {{ $prefiller.imagePullPolicy }}
+        command: ["vllm", "serve"]
+        args:
+        - {{ .Values.model.hfdir }}/{{ .Values.model.name }}
+        - --port
+        - "8000"
+        {{- if $prefiller.args }}
+        {{- toYaml $prefiller.args | nindent 8 }}
+        {{- end }}
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llm-d-hf-token
+              key: HF_TOKEN
+        {{- if $common.env }}
+        {{- toYaml $common.env | nindent 8 }}
+        {{- end }}
+        {{- if $prefiller.env }}
+        {{- toYaml $prefiller.env | nindent 8 }}
+        {{- end }}
+        resources:
+          claims:
+          - name: gpu
+        ports:
+        - containerPort: 8000
+          name: vllm
+          protocol: TCP
+        - containerPort: 5600
+          name: nixl
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: vllm
+          {{- toYaml $common.livenessProbe | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /v1/models
+            port: vllm
+          {{- toYaml $common.readinessProbe | nindent 10 }}
+        startupProbe:
+          httpGet:
+            path: /v1/models
+            port: vllm
+          {{- toYaml $common.startupProbe | nindent 10 }}
+        volumeMounts:
+          - mountPath: /.config
+            name: metrics-volume
+          - mountPath: /dev/shm
+            name: shm
+          - mountPath: /.cache
+            name: torch-compile-cache
+          - name: model-storage
+            mountPath: /data/hostpath
+      resourceClaims:
+      - name: gpu
+        resourceClaimTemplateName: gpu
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      volumes:
+        - emptyDir: {}
+          name: metrics-volume
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+          name: shm
+        - emptyDir: {}
+          name: torch-compile-cache
+        - name: model-storage
+          hostPath:
+            path: /data/hostpath
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $decoder.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ include "poolName" . }}
+    llm-d.ai/role: decode
+spec:
+  {{- if eq .Values.preset "poc" }}
+  replicas: {{ $decoder.replicas }}
+  {{- else }}
+  replicas: {{ $defaultOverride.decoder.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: {{ include "poolName" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "poolName" . }}
+        llm-d.ai/role: decode
+    spec:
+      {{- if $decoder.nodeSelector }}
+      nodeSelector:
+        {{- toYaml $decoder.nodeSelector | nindent 8 }}
+      {{- end }}
+      initContainers:
+      - name: routing-proxy
+        args:
+        - --port=8000
+        - --vllm-port=8200
+        - --connector=nixlv2
+        {{- if $sidecar.args }}
+        {{- toYaml $sidecar.args | nindent 8 }}
+        {{- end }}
+        image: {{ $sidecar.image.repository }}:{{ $sidecar.image.tag }}
+        imagePullPolicy: {{ $sidecar.imagePullPolicy }}
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+          - containerPort: 8000
+            name: sidecar
+        resources: {}
+        restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+      containers:
+      - name: vllm
+        image: {{ $decoder.image.repository }}:{{ $decoder.image.tag }}
+        imagePullPolicy: {{ $decoder.imagePullPolicy }}
+        command: ["vllm", "serve"]
+        args:
+        - {{ .Values.model.hfdir }}/{{ .Values.model.name }}
+        - --port
+        - "8200"
+        {{- if $decoder.args }}
+        {{- toYaml $decoder.args | nindent 8 }}
+        {{- end }}
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llm-d-hf-token
+              key: HF_TOKEN
+        {{- if $common.env }}
+        {{- toYaml $common.env | nindent 8 }}
+        {{- end }}
+        {{- if $decoder.env }}
+        {{- toYaml $decoder.env | nindent 8 }}
+        {{- end }}
+        resources:
+          claims:
+          - name: gpu
+        ports:
+        - containerPort: 8200
+          name: vllm
+          protocol: TCP
+        - containerPort: 5600
+          name: nixl
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: vllm
+          {{- toYaml $common.livenessProbe | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /v1/models
+            port: vllm
+          {{- toYaml $common.readinessProbe | nindent 10 }}
+        startupProbe:
+          httpGet:
+            path: /v1/models
+            port: vllm
+          {{- toYaml $common.startupProbe | nindent 10 }}
+        volumeMounts:
+          - mountPath: /.config
+            name: metrics-volume
+          - mountPath: /dev/shm
+            name: shm
+          - mountPath: /.cache
+            name: torch-compile-cache
+          - name: model-storage
+            mountPath: /data/hostpath
+      resourceClaims:
+      - name: gpu
+        resourceClaimTemplateName: gpu
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      volumes:
+        - emptyDir: {}
+          name: metrics-volume
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+          name: shm
+        - emptyDir: {}
+          name: torch-compile-cache
+        - name: model-storage
+          hostPath:
+            path: /data/hostpath
+            type: Directory
+{{- if eq .Values.preset "poc" }}
+{{- $flexd := .Values.poc.flexibleDecoder }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $flexd.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ include "poolName" . }}
+    llm-d.ai/role: flexible-decode
+spec:
+  replicas: {{ $flexd.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "poolName" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "poolName" . }}
+        llm-d.ai/role: flexible-decode
+    spec:
+      {{- if $flexd.nodeSelector }}
+      nodeSelector:
+        {{- toYaml $flexd.nodeSelector | nindent 8 }}
+      {{- end }}
+      initContainers:
+      - name: routing-proxy
+        args:
+        - --port=8000
+        - --vllm-port=8200
+        - --connector=nixlv2
+        {{- if $sidecar.args }}
+        {{- toYaml $sidecar.args | nindent 8 }}
+        {{- end }}
+        image: {{ $sidecar.image.repository }}:{{ $sidecar.image.tag }}
+        imagePullPolicy: {{ $sidecar.imagePullPolicy }}
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 8000
+          name: sidecar
+        resources: {}
+        restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+      containers:
+      - name: vllm
+        image: {{ $flexd.image.repository }}:{{ $flexd.image.tag }}
+        imagePullPolicy: {{ $flexd.imagePullPolicy }}
+        command: ["vllm", "serve"]
+        args:
+        - {{ .Values.model.hfdir }}/{{ .Values.model.name }}
+        - --port
+        - "8200"
+        {{- if $flexd.args }}
+        {{- toYaml $flexd.args | nindent 8 }}
+        {{- end }}
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llm-d-hf-token
+              key: HF_TOKEN
+        {{- if $common.env }}
+        {{- toYaml $common.env | nindent 8 }}
+        {{- end }}
+        {{- if $flexd.env }}
+        {{- toYaml $flexd.env | nindent 8 }}
+        {{- end }}
+        resources:
+          claims:
+          - name: gpu
+        ports:
+        - containerPort: 8200
+          name: vllm
+          protocol: TCP
+        - containerPort: 5600
+          name: nixl
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: vllm
+          {{- toYaml $common.livenessProbe | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /v1/models
+            port: vllm
+          {{- toYaml $common.readinessProbe | nindent 10 }}
+        startupProbe:
+          httpGet:
+            path: /v1/models
+            port: vllm
+          {{- toYaml $common.startupProbe | nindent 10 }}
+        volumeMounts:
+          - mountPath: /.config
+            name: metrics-volume
+          - mountPath: /dev/shm
+            name: shm
+          - mountPath: /.cache
+            name: torch-compile-cache
+          - name: model-storage
+            mountPath: /data/hostpath
+      resourceClaims:
+      - name: gpu
+        resourceClaimTemplateName: gpu
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      volumes:
+        - emptyDir: {}
+          name: metrics-volume
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+          name: shm
+        - emptyDir: {}
+          name: torch-compile-cache
+        - name: model-storage
+          hostPath:
+            path: /data/hostpath
+            type: Directory
+{{- end }}

@@ -1,0 +1,228 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: latency-predictor-config
+  namespace: {{ .Values.namespace }}
+data:
+  {{- if .Values.prediction.trainer.config }}
+  {{- toYaml .Values.prediction.trainer.config | nindent 2 }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prediction-server-config
+  namespace: {{ .Values.namespace }}
+data:
+  TRAINING_SERVER_URL: "http://training-service.{{ .Values.namespace }}.svc.cluster.local:8000"
+  {{- if .Values.prediction.predictor.config }}
+  {{- toYaml .Values.prediction.predictor.config | nindent 2 }}
+  {{- end }}
+---
+# --- 3. Training Server Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training-server-deployment
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: training-server
+    component: training
+spec:
+  replicas: {{ .Values.prediction.predictor.replicas }}
+  selector:
+    matchLabels:
+      app: training-server
+      component: training
+  template:
+    metadata:
+      labels:
+        app: training-server
+        component: training
+    spec:
+      {{- if .Values.prediction.predictor.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.prediction.predictor.nodeSelector | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: training-server
+        image: {{ .Values.prediction.predictor.image.repository }}:{{ .Values.prediction.predictor.image.tag }}
+        imagePullPolicy: {{ .Values.prediction.predictor.imagePullPolicy }}
+        ports:
+        - containerPort: 8000
+          name: training-port
+        livenessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: /readyz
+            port: 8000
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          # Increased CPU & memory
+          requests:
+            cpu: {{ .Values.prediction.predictor.resources.cpu }}
+            memory: {{ .Values.prediction.predictor.resources.memory }}
+            #ephemeral-storage: "50Gi" # new: reserve 5Gi of scratch space
+          limits:
+            cpu: {{ .Values.prediction.predictor.resources.cpu }}
+            memory: {{ .Values.prediction.predictor.resources.memory }}
+            #ephemeral-storage: "100Gi" # new: cap at 10Gi of scratch space
+
+        envFrom:
+        - configMapRef:
+            name: latency-predictor-config
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: SERVER_TYPE
+          value: "training"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+      volumes:
+      - name: model-storage
+        hostPath:
+          path: /data/hostpath/models
+          type: Directory
+---
+# --- 4. Prediction Server Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prediction-server-deployment
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: prediction-server
+    component: prediction
+spec:
+  replicas: {{ .Values.prediction.trainer.replicas }}
+  selector:
+    matchLabels:
+      app: prediction-server
+      component: prediction
+  template:
+    metadata:
+      labels:
+        app: prediction-server
+        component: prediction
+    spec:
+      {{- if .Values.prediction.trainer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.prediction.trainer.nodeSelector | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: prediction-server
+        image: {{ .Values.prediction.trainer.image.repository }}:{{ .Values.prediction.trainer.image.tag }}
+        imagePullPolicy: {{ .Values.prediction.trainer.imagePullPolicy }}
+        ports:
+        - containerPort: 8001
+          name: predict-port
+        livenessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: /healthz
+            port: 8001
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 10  # Allow more failures while downloading models
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: {{ .Values.prediction.trainer.resources.cpu }}
+            memory: {{ .Values.prediction.trainer.resources.memory }}
+          limits:
+            cpu: {{ .Values.prediction.trainer.resources.cpu }}
+            memory: {{ .Values.prediction.trainer.resources.memory }}
+        envFrom:
+        - configMapRef:
+            name: prediction-server-config
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: SERVER_TYPE
+          value: "prediction"
+        volumeMounts:
+        - name: local-model-storage
+          mountPath: /local_models
+      volumes:
+      - name: local-model-storage
+        hostPath:
+          path: /data/hostpath/local_models
+---
+# --- 5. Services ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: training-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    component: training
+spec:
+  type: ClusterIP
+  selector:
+    app: training-server
+    component: training
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+    name: training
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prediction-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    component: prediction
+spec:
+  type: LoadBalancer
+  selector:
+    app: prediction-server
+    component: prediction
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8001
+    name: prediction
+
+---
+# --- 6. Optional: External Training Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: training-service-external
+  namespace: {{ .Values.namespace }}
+spec:
+  type: LoadBalancer
+  selector:
+    app: training-server
+    component: training
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8000
+

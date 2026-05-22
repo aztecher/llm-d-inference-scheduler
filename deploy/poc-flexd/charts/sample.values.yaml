@@ -1,0 +1,284 @@
+# preset selection
+# chose which demo scenario to deploy
+#   "default" - p=1, d=3
+#   "poc"     - p=1, d=1, flexd=2
+preset: "poc"
+
+namespace: default
+
+model:
+  hfdir: meta-llama
+  name: Llama-3.1-8B-Instruct
+
+epp:
+  replicas: 3
+  image:
+    repository: ghcr.io/aztecher/llm-d-inference-scheduler
+    tag: poc
+  imagePullPolicy: Always
+  args:
+    - --metrics-endpoint-auth=false
+  # env:
+  #   - name: LATENCY_MAX_SAMPLE_SIZE
+  #   - name: LATENCY_FLUSH_INTERVAL_SEC
+  #   - name: LATENCY_USE_NATIVE_XGBOOST
+  #   - name: LATENCY_HTTP_TIMEOUT_SEC
+  #   - name: LATENCY_METRICS_INTERVAL_SEC
+  #   - name: LATENCY_MAX_BULK_SIZE
+  #   - name: LATENCY_COALESCE_WINDOW_MS
+  #   - name: LATENCY_MAX_COALESCED_ROWS
+  #   - name: LATENCY_MAX_CONCURRENT_DISPATCHES
+
+uds:
+  image:
+    repository: ghcr.io/llm-d/llm-d-uds-tokenizer
+    tag: dev
+  imagePullPolicy: IfNotPresent
+
+# Optional
+# httproute:
+#   extarnalDns: true
+#   hostname: <FQDN>
+#   # timeout: 120s
+
+monitoring:
+  # If set true, PodMonitor and ServiceMOnitor will be deployed.
+  # Please check the templates/monitoring directory
+  enabled: false
+  podmonitor:
+    labels:
+      release: kube-prometheus-stack
+  servicemonitor:
+    labels:
+      release: kube-prometheus-stack
+
+eppConfig:
+  name: epp-config
+  plugins:
+    - type: disagg-headers-handler
+    - type: prefix-cache-scorer
+      parameters:
+        blockSizeTokens: 16
+        autoTune: false
+        maxPrefixBlocksToMatch: 256
+        lruCapacityPerServer: 31250
+    - type: queue-scorer
+    - type: prefill-filter
+    - type: decode-filter
+    - type: flexible-decode-filter
+    - type: max-score-picker
+    - type: prefix-based-pd-decider
+      parameters:
+        nonCachedTokens: 1 # PoC: disaggregate on any non-empty prompt
+    # PoC
+    # # Define Saturation Detector which will be used in slo-risk-decider
+    - type: pool-view-producer
+      parameters:
+        pools:
+          prefill:
+            roles:
+              - prefill
+              - encode-prefill
+              - prefill-decode
+              - encode-prefill-decode
+          flex:
+            roles:
+              - flexible-decode
+    # ML-driven latency prediction
+    - type: predicted-latency-producer
+      parameters:
+        streamingMode: true # false, true enables the tracking on TPOT SLO metrics when request contains {'stream': 'true'}
+        sloBufferFactor: 1.0
+        endpointRoleLabel: "llm-d.ai/role"
+    # Per-endpoint SLO filter
+    - type: slo-headroom-tier-filter
+      parameters:
+        epsilonExploreNeg: 0.01
+    # TTFT SLO-violation detector for slo-based-flexd-decider
+    - type: ttft-slo-violation-detector
+      parameters:
+        suppressOnTPOTViolation: false
+    # SLO-based-flexd
+    - type: slo-based-flexd-decider
+      parameters:
+        saturationDetectorPluginName: ttft-slo-violation-detector
+        saturationThreshold: 1. # all usable prefill endpoints must be TTFT-violating
+        pool: prefill # use the snapshot published by pool-view-producer
+        selfDecode:
+          policy: utilization-based
+          parameters:
+            kvCacheThreshold: 0.85
+            queueDepthThreshold: 50.0
+    # Updated disagg-profile-handler
+    - type: disagg-profile-handler
+      parameters:
+        profiles:
+          decode: decode
+          prefill: prefill
+          flexibleDecode: flexible-decode
+        deciders:
+          prefill: prefix-based-pd-decider # use existing decider
+          flexibleDecode: slo-based-flexd-decider
+  schedulingProfiles:
+    - name: prefill
+      plugins:
+      - pluginRef: prefill-filter
+      - pluginRef: slo-headroom-tier-filter
+      - pluginRef: max-score-picker
+      - pluginRef: prefix-cache-scorer
+        weight: 2
+      - pluginRef: queue-scorer
+        weight: 1
+    - name: decode
+      plugins:
+      - pluginRef: decode-filter
+      - pluginRef: slo-headroom-tier-filter
+      - pluginRef: max-score-picker
+      - pluginRef: prefix-cache-scorer
+        weight: 2
+      - pluginRef: queue-scorer
+        weight: 1
+    - name: flexible-decode
+      plugins:
+      - pluginRef: flexible-decode-filter
+      - pluginRef: slo-headroom-tier-filter
+      - pluginRef: max-score-picker
+      - pluginRef: prefix-cache-scorer
+        weight: 2
+      - pluginRef: queue-scorer
+        weight: 1
+
+poc:
+  common:
+    livenessProbe:
+      failureThreshold: 3
+      periodSeconds: 10
+      timeoutSeconds: 5
+    readinessProbe:
+      failureThreshold: 3
+      periodSeconds: 5
+      timeoutSeconds: 2
+    startupProbe:
+      failureThreshold: 60
+      initialDelaySeconds: 180
+      periodSeconds: 10
+      timeoutSeconds: 10
+    env:
+      - name: LIBRARY_PATH
+        value: "/usr/local/cuda/lib64/stubs:/usr/lib/x86_64-linux-gnu:/usr/lib64:/usr/local/nvidia/lib64"
+      - name: NVIDIA_DRIVER_CAPABILITIES
+        value: "compute,utility"
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: HF_HOME
+        value: /data/hostpath/hf_hub_cache
+    
+  prefiller:
+    name: vllm-p
+    image:
+      repository: ghcr.io/llm-d/llm-d-cuda
+      tag: v0.6.0
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    args:
+      - --max-model-len
+      - "8192"
+      - --disable-uvicorn-access-log
+      - --tensor-parallel-size
+      - "1"
+      - --kv-transfer-config
+      - '{"kv_connector":"NixlConnector", "kv_role":"kv_both", "kv_buffer_device":"cuda"}'
+
+  routingSidecar:
+    image:
+      repository: ghcr.io/aztecher/llm-d-routing-sidecar
+      tag: poc
+    imagePullPolicy: IfNotPresent
+    args:
+      - --zap-encoder=json
+      - --zap-log-level=debug
+      - --secure-proxy=false
+
+  decoder:
+    name: vllm-d
+    image:
+      repository: ghcr.io/llm-d/llm-d-cuda
+      tag: v0.6.0
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    args:
+      - --max-model-len
+      - "8192"
+      - --tensor-parallel-size
+      - "1"
+      - --kv-transfer-config
+      - '{"kv_connector":"NixlConnector", "kv_role":"kv_both", "kv_buffer_device":"cuda"}'
+      - --disable-uvicorn-access-log
+
+  flexibleDecoder:
+    name: vllm-flexd
+    image:
+      repository: ghcr.io/llm-d/llm-d-cuda
+      tag: v0.6.0
+    imagePullPolicy: IfNotPresent
+    replicas: 2
+    args:
+      - --max-model-len
+      - "8192"
+      - --tensor-parallel-size
+      - "1"
+      - --kv-transfer-config
+      - '{"kv_connector":"NixlConnector", "kv_role":"kv_both", "kv_buffer_device":"cuda"}'
+      - --disable-uvicorn-access-log
+
+  uds:
+    image:
+      repository: ghcr.io/llm-d/llm-d-uds-tokenizer
+      tag: dev
+    imagePullPolicy: IfNotPresent  
+
+# Reusing most settings from 'poc'.
+default:
+  decoder:
+    replicas: 3
+
+prediction:
+  enabled: true
+  predictor:
+    config:
+      MODEL_SYNC_INTERVAL_SEC: "10"
+      LATENCY_MODEL_TYPE: "xgboost"
+      PREDICT_HOST: "0.0.0.0"
+      PREDICT_PORT: "8001"
+      HTTP_TIMEOUT: "30"
+      LOCAL_TTFT_MODEL_PATH: "/local_models/ttft.joblib"
+      LOCAL_TPOT_MODEL_PATH: "/local_models/tpot.joblib"
+      LOCAL_TTFT_SCALER_PATH: "/local_models/ttft_scaler.joblib"
+      LOCAL_TPOT_SCALER_PATH: "/local_models/tpot_scaler.joblib"
+    replicas: 1
+    image:
+      repository: ghcr.io/aztecher/latencypredictor-training-server
+      tag: poc
+    imagePullPolicy: IfNotPresent
+    resources:
+      cpu: 8000m
+      memory: 8Gi
+  trainer:
+    config:
+      LATENCY_RETRAINING_INTERVAL_SEC: "1"
+      LATENCY_MIN_SAMPLES_FOR_RETRAIN: "10" # from "100"
+      LATENCY_MODEL_TYPE: "xgboost"
+      LATENCY_TTFT_MODEL_PATH: "/models/ttft.joblib"
+      LATENCY_TPOT_MODEL_PATH: "/models/tpot.joblib"
+      LATENCY_TTFT_SCALER_PATH: "/models/ttft_scaler.joblib"
+      LATENCY_TPOT_SCALER_PATH: "/models/tpot_scaler.joblib"
+    replicas: 1
+    image:
+      repository: ghcr.io/aztecher/latencypredictor-prediction-server
+      tag: poc
+    imagePullPolicy: IfNotPresent
+    resources:
+      cpu: 8000m
+      memory: 8Gi
