@@ -1,0 +1,156 @@
+{
+  "benchmark_time_seconds": 0.0,
+  "load_summary": {},
+  "successes": {
+    "count": 0,
+    "rate": 0.0,
+    "prompt_len": {
+      "mean": 0,
+      "rate": 0.0
+    },
+    "output_len": {
+      "mean": 0,
+      "rate": 0.0
+    },
+    "queue_len": {
+      "mean": 0
+    },
+    "request_latency": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "time_to_first_token": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "time_per_output_token": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "kv_cache_usage_percentage": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "num_requests_swapped": {
+      "mean": 0
+    },
+    "num_preemptions_total": {
+      "mean": 0
+    },
+    "prefix_cache_hit_percent": {
+      "mean": 0.0
+    },
+    "inter_token_latency": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "num_requests_running": {
+      "mean": 0.0
+    },
+    "request_queue_time": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_inference_time": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_prefill_time": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_decode_time": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_prompt_tokens": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_generation_tokens": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_max_num_generation_tokens": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_params_n": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_params_max_tokens": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "request_success_count": 0.0,
+    "iteration_tokens": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "prompt_tokens_cached": 0.0,
+    "prompt_tokens_recomputed": 0.0,
+    "external_prefix_cache_hit_percent": {
+      "mean": 0.0
+    },
+    "mm_cache_hit_percent": {
+      "mean": 0.0
+    },
+    "corrupted_requests": 0.0,
+    "request_prefill_kv_computed_tokens": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "kv_block_idle_before_evict": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "kv_block_lifetime": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    },
+    "kv_block_reuse_gap": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "p99": 0.0
+    }
+  },
+  "failures": {}
+}

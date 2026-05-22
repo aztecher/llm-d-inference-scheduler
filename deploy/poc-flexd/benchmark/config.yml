@@ -1,0 +1,54 @@
+api:
+  type: completion
+  streaming: true
+  headers:
+    x-slo-ttft-ms: '600'
+    x-slo-tpot-ms: '50'
+  slo_unit: ms
+data:
+  type: synthetic
+  input_distribution:
+    min: 2048
+    max: 4096
+    mean: 4096
+    std_dev: 10
+  output_distribution:
+    min: 256
+    max: 1024
+    mean: 512
+    std_dev: 50
+load:
+  type: constant
+  interval: 1.0
+  stages:
+    - rate: 4.0
+      duration: 150
+    - rate: 32.0
+      duration: 30
+    - rate: 4.0
+      duration: 150
+    - rate: 32.0
+      duration: 30
+    - rate: 4.0
+      duration: 150
+  worker_max_concurrency: 8
+server:
+  type: vllm
+  model_name: meta-llama/Llama-3.1-8B-Instruct
+  base_url: < LLM API URL >
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: meta-llama/Llama-3.1-8B-Instruct
+metrics:
+  type: prometheus
+  prometheus:
+    url: < PROMETHEUS URL >
+    scrape_interval: 15
+report:
+  prometheus:
+    summary: true
+    per_stage: false
+  session_lifecycle:
+    summary: true
+    per_stage: true
+    per_session: false
