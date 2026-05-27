@@ -94,15 +94,36 @@ eppConfig:
     - type: slo-headroom-tier-filter
       parameters:
         epsilonExploreNeg: 0.01
-    # TTFT SLO-violation detector for slo-based-flexd-decider
-    - type: ttft-slo-violation-detector
+
+    - type: predicted-ttft-percentile-detector
       parameters:
-        suppressOnTPOTViolation: false
+        percentile: 0.99
+        thresholdMs: 500
+    
+    - type: queue-depth-detector
+      parameters:
+        aggregation: percentile
+        percentile: 0.99
+        threshold: 40
+    
+    - type: kv-cache-pressure-detector
+      parameters:
+        aggregation: max
+        threshold: 0.8
+    
+    - type: composite-saturation-detector
+      parameters:
+        strategy: max
+        detectors:
+        - pluginName: predicted-ttft-percentile-detector
+        - pluginName: queue-depth-detector
+        - pluginName: kv-cache-pressure-detector
+
     # SLO-based-flexd
     - type: slo-based-flexd-decider
       parameters:
-        saturationDetectorPluginName: ttft-slo-violation-detector
-        saturationThreshold: 1. # all usable prefill endpoints must be TTFT-violating
+        saturationDetectorPluginName: composite-saturation-detector
+        saturationThreshold: 1.0 # all usable prefill endpoints must be TTFT-violating
         pool: prefill # use the snapshot published by pool-view-producer
         selfDecode:
           policy: utilization-based

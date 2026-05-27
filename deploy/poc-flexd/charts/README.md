@@ -36,6 +36,7 @@ helm upgrade -i --create-namespace \
   llm-d-router-poc \
   . \
   -f values.yaml \
+  --set namespace=$NAMESPACE \
   --set preset="poc"
 
 # Default (prefill = 1, decode = 3)
@@ -44,5 +45,6 @@ helm upgrade -i --create-namespace \
   llm-d-router-poc \
   . \
   -f values.yaml \
+  --set namespace=$NAMESPACE \
   --set preset="default"
 ```
