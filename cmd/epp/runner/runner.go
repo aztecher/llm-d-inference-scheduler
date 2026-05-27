@@ -72,7 +72,6 @@ import (
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/composite"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/concurrency"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/signals"
-	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/ttftsloviolation"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/utilization"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/usagelimits"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/requestcontrol/admitter/latencyslo"
@@ -115,9 +114,7 @@ const (
 	enableExperimentalFlowControlLayer = "ENABLE_EXPERIMENTAL_FLOW_CONTROL_LAYER"
 )
 
-var (
-	setupLog = ctrl.Log.WithName("setup")
-)
+var setupLog = ctrl.Log.WithName("setup")
 
 // NewRunner initializes a new EPP Runner and returns its pointer.
 func NewRunner() *Runner {
@@ -444,8 +441,8 @@ func NewEndpointPoolFromOptions(
 }
 
 func setupDatastore(ctx context.Context, epFactory datalayer.EndpointFactory, modelServerMetricsPort int32,
-	startCrdReconcilers bool, namespace, name, endpointSelector string, endpointTargetPorts []int) (datastore.Datastore, error) {
-
+	startCrdReconcilers bool, namespace, name, endpointSelector string, endpointTargetPorts []int,
+) (datastore.Datastore, error) {
 	if startCrdReconcilers {
 		return datastore.NewDatastore(ctx, epFactory, modelServerMetricsPort), nil
 	} else {
@@ -513,7 +510,6 @@ func (r *Runner) registerInTreePlugins() {
 	fwkplugin.Register(signals.QueueDepthDetectorType, signals.QueueDepthDetectorFactory)
 	fwkplugin.Register(signals.KVCachePressureDetectorType, signals.KVCachePressureDetectorFactory)
 	fwkplugin.Register(utilization.UtilizationDetectorType, utilization.UtilizationDetectorFactory)
-	fwkplugin.Register(ttftsloviolation.TTFTSLOViolationDetectorType, ttftsloviolation.TTFTSLOViolationDetectorFactory)
 }
 
 func (r *Runner) parseConfigurationPhaseOne(ctx context.Context, opts *runserver.Options) (*configapi.EndpointPickerConfig, error) {
@@ -578,7 +574,6 @@ func (r *Runner) parseConfigurationPhaseTwo(ctx context.Context, rawConfig *conf
 
 	handle := fwkplugin.NewEppHandle(ctx, makePodListFunc(ds))
 	cfg, err := loader.InstantiateAndConfigure(rawConfig, handle, logger)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to load the configuration - %w", err)
 	}
@@ -714,7 +709,6 @@ func extractGKNN(poolName, poolGroup, poolNamespace, endpointSelector string) (*
 		eppPodNameEnv := os.Getenv("POD_NAME")
 		if eppPodNameEnv == "" {
 			return nil, errors.New("failed to get environment variable POD_NAME")
-
 		}
 		eppName, err := extractDeploymentName(eppPodNameEnv)
 		if err != nil {
