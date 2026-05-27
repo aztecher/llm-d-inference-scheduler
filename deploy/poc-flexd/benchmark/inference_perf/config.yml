@@ -8,19 +8,23 @@ api:
 data:
   type: synthetic
   input_distribution:
-    min: 2048
+    # To ensure consistent load for accurate performance comparison:
+    # - 'min' and 'max' are set to the same value as 'mean'.
+    # - 'std_dev' is set to 0 to eliminate variance in token length.
+    min: 4096
     max: 4096
     mean: 4096
-    std_dev: 10
+    std_dev: 0
   output_distribution:
-    min: 256
-    max: 1024
+    min: 512
+    max: 512
     mean: 512
-    std_dev: 50
+    std_dev: 0
 load:
   type: constant
   interval: 1.0
   stages:
+    # low -> high -> low -> high -> low
     - rate: 4.0
       duration: 150
     - rate: 32.0
@@ -35,14 +39,14 @@ load:
 server:
   type: vllm
   model_name: meta-llama/Llama-3.1-8B-Instruct
-  base_url: < LLM API URL >
+  base_url: <LLM API URL>
   ignore_eos: true
 tokenizer:
   pretrained_model_name_or_path: meta-llama/Llama-3.1-8B-Instruct
 metrics:
   type: prometheus
   prometheus:
-    url: < PROMETHEUS URL >
+    url: <PROMETHEUS_URL>
     scrape_interval: 15
 report:
   prometheus:
