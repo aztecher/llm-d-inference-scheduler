@@ -28,6 +28,7 @@ import (
 	"math"
 
 	"github.com/go-logr/logr"
+	framework "github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/scheduling"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	logutil "github.com/llm-d/llm-d-inference-scheduler/pkg/common/observability/logging"
@@ -87,6 +88,7 @@ type Detector struct {
 var (
 	_ flowcontrol.SaturationDetector = &Detector{}
 	_ fwkplugin.ConsumerPlugin       = &Detector{}
+	_ framework.Filter               = &Detector{}
 )
 
 // Factory creates a CompositeDetector from EndpointPickerConfig parameters.
@@ -197,6 +199,13 @@ func (d *Detector) Consumes() map[string]any {
 		return nil
 	}
 	return consumes
+}
+
+// Filter is a no-op pass-through. The detector implements framework.Filter so
+// it is classified into the SchedulingLayer by DAG ordering, allowing it to
+// consume LatencyPredictionInfo produced at the RequestControlLayer.
+func (d *Detector) Filter(_ context.Context, _ *framework.CycleState, _ *framework.InferenceRequest, endpoints []framework.Endpoint) []framework.Endpoint {
+	return endpoints
 }
 
 // Saturation returns the configured aggregate of normalized child detector signals.

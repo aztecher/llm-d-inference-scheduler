@@ -35,6 +35,7 @@ import (
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/datalayer"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/flowcontrol"
 	fwkplugin "github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/plugin"
+	framework "github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/interface/scheduling"
 	attrlatency "github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/datalayer/attribute/latency"
 	metricextractor "github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/datalayer/extractor/metrics"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/epp/framework/plugins/flowcontrol/saturationdetector/utilization"
@@ -108,10 +109,13 @@ type KVCachePressureDetector struct {
 var (
 	_ flowcontrol.SaturationDetector = &PredictedTTFTPercentileDetector{}
 	_ fwkplugin.ConsumerPlugin       = &PredictedTTFTPercentileDetector{}
+	_ framework.Filter               = &PredictedTTFTPercentileDetector{}
 	_ flowcontrol.SaturationDetector = &QueueDepthDetector{}
 	_ fwkplugin.ConsumerPlugin       = &QueueDepthDetector{}
+	_ framework.Filter               = &QueueDepthDetector{}
 	_ flowcontrol.SaturationDetector = &KVCachePressureDetector{}
 	_ fwkplugin.ConsumerPlugin       = &KVCachePressureDetector{}
+	_ framework.Filter               = &KVCachePressureDetector{}
 )
 
 // PredictedTTFTPercentileDetectorFactory creates a predicted TTFT percentile detector.
@@ -159,6 +163,13 @@ func (d *PredictedTTFTPercentileDetector) TypedName() fwkplugin.TypedName {
 
 func (d *PredictedTTFTPercentileDetector) Consumes() map[string]any {
 	return map[string]any{attrlatency.LatencyPredictionInfoKey: attrlatency.LatencyPredictionInfo{}}
+}
+
+// Filter is a no-op pass-through. The detector implements framework.Filter so
+// it is classified into the SchedulingLayer by DAG ordering, allowing it to
+// consume LatencyPredictionInfo produced at the RequestControlLayer.
+func (d *PredictedTTFTPercentileDetector) Filter(_ context.Context, _ *framework.CycleState, _ *framework.InferenceRequest, endpoints []framework.Endpoint) []framework.Endpoint {
+	return endpoints
 }
 
 func (d *PredictedTTFTPercentileDetector) Saturation(_ context.Context, endpoints []datalayer.Endpoint) float64 {
@@ -230,6 +241,12 @@ func (d *QueueDepthDetector) TypedName() fwkplugin.TypedName {
 
 func (d *QueueDepthDetector) Consumes() map[string]any {
 	return map[string]any{metricextractor.WaitingQueueSizeKey: int(0)}
+}
+
+// Filter is a no-op pass-through. The detector implements framework.Filter so
+// it is classified into the SchedulingLayer by DAG ordering.
+func (d *QueueDepthDetector) Filter(_ context.Context, _ *framework.CycleState, _ *framework.InferenceRequest, endpoints []framework.Endpoint) []framework.Endpoint {
+	return endpoints
 }
 
 func (d *QueueDepthDetector) Saturation(_ context.Context, endpoints []datalayer.Endpoint) float64 {
@@ -305,6 +322,12 @@ func (d *KVCachePressureDetector) TypedName() fwkplugin.TypedName {
 
 func (d *KVCachePressureDetector) Consumes() map[string]any {
 	return map[string]any{metricextractor.KVCacheUsagePercentKey: float64(0)}
+}
+
+// Filter is a no-op pass-through. The detector implements framework.Filter so
+// it is classified into the SchedulingLayer by DAG ordering.
+func (d *KVCachePressureDetector) Filter(_ context.Context, _ *framework.CycleState, _ *framework.InferenceRequest, endpoints []framework.Endpoint) []framework.Endpoint {
+	return endpoints
 }
 
 func (d *KVCachePressureDetector) Saturation(_ context.Context, endpoints []datalayer.Endpoint) float64 {
